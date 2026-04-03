@@ -1,4 +1,4 @@
-name: ipa-transcriber-04
+name: ipa-transcriber-4
 channels:
   - pytorch
   - conda-forge
@@ -6,8 +6,9 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - pytorch-cpu>=2.0.0
-  - torchaudio-cpu>=2.0.0
+  - cpuonly  # Ensure CPU-only installation for PyTorch
+  - pytorch>=2.0.0
+  - torchaudio>=2.0.0
   - numpy
   - pandas
   - matplotlib
@@ -34,7 +35,7 @@ dependencies:
     
     # Speech analysis
     - praat-parselmouth>=0.4.3
-    - webrtcvad>=2.0.10
+    - webrtcvad-wheels>=2.0.11.post1
     - silero-vad>=4.0.0
     
     # Additional models

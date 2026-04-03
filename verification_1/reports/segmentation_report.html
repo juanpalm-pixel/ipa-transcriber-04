@@ -1,0 +1,76 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Segmentation Comparison Report</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            h1 { color: #333; }
+            h2 { color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+            table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+            th { background-color: #4CAF50; color: white; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            .metric { font-size: 24px; font-weight: bold; color: #4CAF50; }
+            .section { margin: 30px 0; }
+            img { max-width: 100%; height: auto; margin: 20px 0; }
+        </style>
+    </head>
+    <body>
+        <h1>Audio Segmentation Comparison Report</h1>
+        <p>Generated: 2026-04-03 15:42:30</p>
+        
+        <div class="section">
+            <h2>Summary</h2>
+            <p>Total segments: <span class="metric">292</span></p>
+            <p>Models tested: <span class="metric">2</span></p>
+        </div>
+        
+        <div class="section">
+            <h2>Model Comparison</h2>
+            <table>
+                <tr>
+                    <th>Model</th>
+                    <th>Segments</th>
+                    <th>Avg Duration (ms)</th>
+                    <th>Std Duration (ms)</th>
+                    <th>Processing Time (s)</th>
+                </tr>
+    
+                <tr>
+                    <td>silero-vad</td>
+                    <td>137</td>
+                    <td>1379</td>
+                    <td>992</td>
+                    <td>30.09</td>
+                </tr>
+        
+                <tr>
+                    <td>whisper-base</td>
+                    <td>155</td>
+                    <td>954</td>
+                    <td>552</td>
+                    <td>241.26</td>
+                </tr>
+        
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>Visualizations</h2>
+            <img src="segmentation_comparison.png" alt="Segmentation Comparison">
+        </div>
+    
+        <div class="section">
+            <h3>Timeline: silero-vad</h3>
+            <img src="timeline_silero-vad.png" alt="Timeline for silero-vad">
+        </div>
+        
+        <div class="section">
+            <h3>Timeline: whisper-base</h3>
+            <img src="timeline_whisper-base.png" alt="Timeline for whisper-base">
+        </div>
+        
+    </body>
+    </html>
+    
