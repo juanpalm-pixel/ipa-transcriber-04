@@ -53,14 +53,14 @@ build/
 # Output files (keep structure, ignore content)
 output/**/*
 !output/.gitkeep
-verification_1/**/*
-!verification_1/.gitkeep
-verification_2/**/*
-!verification_2/.gitkeep
-verification_3/**/*
-!verification_3/.gitkeep
-verification_4/**/*
-!verification_4/.gitkeep
+verification_1/reports/**/*
+!verification_1/reports/.gitkeep
+verification_2/reports/**/*
+!verification_2/reports/.gitkeep
+verification_3/reports/**/*
+!verification_3/reports/.gitkeep
+verification_4/reports/**/*
+!verification_4/reports/.gitkeep
 
 # Segmentation outputs
 segmentation/output/**/*
