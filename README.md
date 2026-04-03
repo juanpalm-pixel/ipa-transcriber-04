@@ -27,7 +27,8 @@ Each stage includes a verification step with interactive review tools.
 
 - Python 3.10+
 - Conda (recommended) or pip
-- CUDA-compatible GPU (optional but recommended)
+- **CPU-only** (No GPU required)
+- 8GB+ RAM recommended
 - HuggingFace account with access token
 - GitHub account with personal access token
 
@@ -52,10 +53,13 @@ Each stage includes a verification step with interactive review tools.
    conda activate ipa-transcriber-04
    ```
 
-   Or using pip:
+   Or using pip (CPU-only PyTorch):
    ```bash
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
    pip install -r requirements.txt
    ```
+
+   **Note**: This project is configured for **CPU-only** execution. See `CPU_CONFIGURATION.md` for performance notes.
 
 ### Basic Usage
 

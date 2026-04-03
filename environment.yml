@@ -6,9 +6,8 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - pytorch>=2.0.0
-  - torchaudio>=2.0.0
-  - cudatoolkit=11.8  # Adjust based on your GPU
+  - pytorch-cpu>=2.0.0
+  - torchaudio-cpu>=2.0.0
   - numpy
   - pandas
   - matplotlib

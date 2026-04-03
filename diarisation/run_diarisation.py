@@ -29,9 +29,9 @@ RESULTS_FILE = "diarisation_results.csv"
 OUTPUT_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
-# Device configuration
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+# Device configuration - CPU only
+device = "cpu"
+print(f"Using device: {device} (CPU-only mode)")
 
 # HuggingFace token
 HF_TOKEN = os.getenv('HF_TOKEN')
@@ -51,15 +51,16 @@ class PyAnnoteDiariser:
         try:
             from pyannote.audio import Pipeline
             
+            # Load pipeline in CPU mode
             self.pipeline = Pipeline.from_pretrained(
                 self.model_name,
                 use_auth_token=HF_TOKEN
             )
             
-            if torch.cuda.is_available():
-                self.pipeline.to(torch.device("cuda"))
+            # Ensure CPU mode
+            self.pipeline.to(torch.device("cpu"))
             
-            print(f"✓ Loaded {self.name}")
+            print(f"✓ Loaded {self.name} (CPU mode)")
             return True
             
         except Exception as e:

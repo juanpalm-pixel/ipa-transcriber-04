@@ -32,9 +32,9 @@ RESULTS_FILE = "segmentation_results.csv"
 OUTPUT_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
-# Device configuration
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+# Device configuration - CPU only
+device = "cpu"
+print(f"Using device: {device} (CPU-only mode)")
 
 
 class SileroVADSegmenter:
@@ -46,6 +46,8 @@ class SileroVADSegmenter:
         
     def load(self):
         try:
+            # Force CPU mode
+            torch.set_num_threads(1)  # Optimize for CPU
             self.model, utils = torch.hub.load(
                 repo_or_dir='snakers4/silero-vad',
                 model='silero_vad',
@@ -53,8 +55,9 @@ class SileroVADSegmenter:
                 onnx=False
             )
             self.get_speech_timestamps = utils[0]
-            self.model.to(device)
-            print(f"✓ Loaded {self.name}")
+            # Ensure CPU mode
+            self.model = self.model.cpu()
+            print(f"✓ Loaded {self.name} (CPU mode)")
             return True
         except Exception as e:
             print(f"✗ Failed to load {self.name}: {e}")
@@ -65,7 +68,7 @@ class SileroVADSegmenter:
         try:
             # Load audio
             wav, sr = librosa.load(audio_path, sr=16000, mono=True)
-            wav_tensor = torch.FloatTensor(wav).to(device)
+            wav_tensor = torch.FloatTensor(wav)  # CPU tensor
             
             # Get speech timestamps
             speech_timestamps = self.get_speech_timestamps(
@@ -123,8 +126,9 @@ class WhisperSegmenter:
     def load(self):
         try:
             import whisper
-            self.model = whisper.load_model(self.model_size, device=device)
-            print(f"✓ Loaded {self.name}")
+            # Force CPU mode
+            self.model = whisper.load_model(self.model_size, device="cpu")
+            print(f"✓ Loaded {self.name} (CPU mode)")
             return True
         except Exception as e:
             print(f"✗ Failed to load {self.name}: {e}")
