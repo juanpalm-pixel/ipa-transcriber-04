@@ -1,0 +1,97 @@
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.aac
+
+# Model weights and caches
+*/models/*
+**/models/**
+.cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# HuggingFace cache
+.huggingface/
+huggingface/
+transformers_cache/
+
+# PyTorch
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Conda
+.conda/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+*.log
+
+# Output files (keep structure, ignore content)
+output/**/*
+!output/.gitkeep
+verification_1/**/*
+!verification_1/.gitkeep
+verification_2/**/*
+!verification_2/.gitkeep
+verification_3/**/*
+!verification_3/.gitkeep
+verification_4/**/*
+!verification_4/.gitkeep
+
+# Segmentation outputs
+segmentation/output/**/*
+!segmentation/output/.gitkeep
+segmentation/models/**/*
+!segmentation/models/.gitkeep
+
+# Diarisation outputs
+diarisation/output/**/*
+!diarisation/output/.gitkeep
+diarisation/models/**/*
+!diarisation/models/.gitkeep
+
+# IPA outputs
+ipa/output/**/*
+!ipa/output/.gitkeep
+ipa/models/**/*
+!ipa/models/.gitkeep
+
+# Tone outputs
+tone-correction/output/**/*
+!tone-correction/output/.gitkeep
+tone-correction/models/**/*
+!tone-correction/models/.gitkeep
+
+# Keep CSV results and reports
+!*.csv
+!*_report.txt
+!*_report.html
+!*.md
+
+# Input files (exclude to save space, but track .gitkeep)
+input/**/*
+!input/.gitkeep

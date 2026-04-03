@@ -1,0 +1,53 @@
+# IPA Transcriber 04 - Requirements
+# Generated for pip users (conda environment.yml is recommended)
+
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers>=4.35.0
+accelerate>=0.24.0
+datasets>=2.14.0
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+pydub>=0.25.0
+audioread>=3.0.0
+resampy>=0.4.0
+
+# Diarization
+pyannote.audio>=3.0.0
+pyannote.core>=5.0.0
+pyannote.database>=5.0.0
+pyannote.metrics>=3.2.0
+
+# Speech analysis
+praat-parselmouth>=0.4.3
+webrtcvad>=2.0.10
+silero-vad>=4.0.0
+
+# Additional models
+openai-whisper>=20230314
+jiwer>=3.0.0
+
+# Visualization
+plotly>=5.17.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Audio playback
+pygame>=2.5.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# GitHub integration
+PyGithub>=2.1.0
+gitpython>=3.1.40
+
+# HuggingFace Hub
+huggingface-hub>=0.19.0

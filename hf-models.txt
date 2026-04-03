@@ -1,0 +1,11 @@
+fdemelo/g2p-multilingual-byt5-tiny-8l-ipa-childes
+neurlang/ipa-whisper-small
+neurlang/ipa-whisper-base
+anyspeech/ipa-align-base-phone
+Hend123/ipa-final
+mistralai/Voxtral-Mini-4B-Realtime-2602
+yiyanghkust/finbert-tone-chinese
+microsoft/VibeVoice-ASR
+openai/whisper-large-v3
+ibm-granite/granite-4.0-1b-speech
+vinai/xphonebert-base

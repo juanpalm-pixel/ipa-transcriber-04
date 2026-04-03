@@ -1,0 +1,31 @@
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Plan Ready for Review                                                                                                             │
+│ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│ Zero-Shot ASR Pipeline for Rengmitca Language                                                                                     │
+│                                                                                                                                   │
+│ Corrected Pipeline Flow: segmentation → diarisation → ipa → tone (with verification stages between each)                          │
+│                                                                                                                                   │
+│ Approach:                                                                                                                         │
+│                                                                                                                                   │
+│  - Test ALL models in parallel at each stage, compare results comprehensively                                                     │
+│  - Each stage outputs CSV files + interactive verification tools for manual review                                                │
+│  - Start with 5-minute test file (input/1.wav) before scaling to 40-minute blocks                                                 │
+│                                                                                                                                   │
+│ Key Implementation Phases:                                                                                                        │
+│                                                                                                                                   │
+│  1. Environment Setup: Conda environment + GitHub repo "ipa-transcriber-04" with .gitignore                                       │
+│  2. Segmentation: Test VibeVoice-ASR, VAD, Whisper approaches → audio clips named by timestamps                                   │
+│  3. Diarisation: Test pyannote models + VibeVoice → speaker IDs in CSV                                                            │
+│  4. IPA Transcription: Test 9 models (ipa-whisper, Allosaurus, MMS, etc.) → master CSV with all outputs                           │
+│  5. Tone Detection: Pitch analysis + tone classification → tone inventory proposal                                                │
+│  6. Verification Tools: Interactive review/editing tools at each stage with reports                                               │
+│  7. Model Comparison: WER metrics, performance rankings, recommendations in MODELS.md                                             │
+│                                                                                                                                   │
+│ Documentation:                                                                                                                    │
+│                                                                                                                                   │
+│  - Comprehensive docs for setup, architecture, results                                                                            │
+│  - Commit to GitHub after every trial/stage completion                                                                            │
+│  - All model results preserved for future fine-tuning decisions                                                                   │
+│                                                                                                                                   │
+│ 15 todos created with dependencies tracked in SQL database, ready for sequential execution.                                       │
+│                                                                                                                                 
