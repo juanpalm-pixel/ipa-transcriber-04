@@ -1,1 +1,1 @@
-diarisation -> verification_1 -> segmentation -> verification_2 -> ipa -> verification_3 -> tone -> verification_4
+segmentation -> verification_1 -> diarisation -> verification_2 -> ipa -> verification_3 -> tone -> verification_4
