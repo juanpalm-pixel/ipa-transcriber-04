@@ -642,7 +642,7 @@ Full Path: {segment['full_path']}"""
             self.df.loc[row_index, 'start_time_ms'] = new_start_ms
             self.df.loc[row_index, 'end_time_ms'] = new_end_ms
             self.df.loc[row_index, 'duration_ms'] = new_end_ms - new_start_ms
-            self.df.loc[row_index, 'full_path'] = str(final_path.resolve())
+            self.df.loc[row_index, 'full_path'] = str(final_path.relative_to(SEGMENTATION_DIR))
 
             self.save_results()
             self.corrections.append({
@@ -743,7 +743,7 @@ Full Path: {segment['full_path']}"""
             new_row['start_time_ms'] = new_start_ms
             new_row['end_time_ms'] = new_end_ms
             new_row['duration_ms'] = new_end_ms - new_start_ms
-            new_row['full_path'] = str(final_path.resolve())
+            new_row['full_path'] = str(final_path.relative_to(SEGMENTATION_DIR))
 
             top = self.df.iloc[:insert_pos]
             bottom = self.df.iloc[insert_pos:]

@@ -31,18 +31,18 @@ RESULTS_FILE = "segmentation_results.csv"
 # Single source of truth for model segmentation controls.
 MODEL_SEGMENT_KWARGS = {
     "silero-vad": {
-        "threshold": 0.7,
+        "threshold": 0.5,  # Higher => more strict (default is 0.5 for Silero VAD)
+        "min_silence_duration_ms": 280,
+        "min_speech_duration_ms": 300,
+    },
+    "whisper-base-cancel": {
+        "threshold": 0.7, # Higher => more strict (default is 0.6 for no_speech_threshold in Whisper)
         "min_speech_duration_ms": 300,
         "min_silence_duration_ms": 300,
     },
-    "whisper-base": {
-        "threshold": 0.7,
-        "min_speech_duration_ms": 300,
-        "min_silence_duration_ms": 300,
-    },
-    "simple-vad": {
-        "threshold_db": -25, # Closer to 0 => more stric
-        "min_silence_duration": 0.3,
+    "simple-vad-cancel": {
+        "threshold_db": -25, # Closer to 0 => more stric (default is -30 dB for energy-based VAD)
+        "min_silence_duration": 0.28,
         "min_segment_duration": 0.3,
     },
 }
