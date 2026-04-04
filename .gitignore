@@ -68,6 +68,7 @@ segmentation/output/**/*
 !segmentation/output/.gitkeep
 segmentation/models/**/*
 !segmentation/models/.gitkeep
+segmentation/segmentation_results.csv
 
 # Diarisation outputs
 diarisation/output/**/*
