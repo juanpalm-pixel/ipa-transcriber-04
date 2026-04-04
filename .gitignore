@@ -68,7 +68,6 @@ segmentation/output/**/*
 !segmentation/output/.gitkeep
 segmentation/models/**/*
 !segmentation/models/.gitkeep
-segmentation/segmentation_results.csv
 
 # Diarisation outputs
 diarisation/output/**/*
@@ -93,6 +92,10 @@ tone-correction/models/**/*
 !*_report.txt
 !*_report.html
 !*.md
+
+# But these specific CSV files are too large, so ignore them
+segmentation/segmentation_results.csv
+
 
 # Input files (exclude to save space, but track .gitkeep)
 input/**/*
