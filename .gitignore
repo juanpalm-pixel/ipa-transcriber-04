@@ -61,6 +61,7 @@ verification_3/reports/**/*
 !verification_3/reports/.gitkeep
 verification_4/reports/**/*
 !verification_4/reports/.gitkeep
+*.csv
 
 # Segmentation outputs
 segmentation/output/**/*

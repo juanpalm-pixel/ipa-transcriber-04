@@ -28,6 +28,25 @@ OUTPUT_DIR = Path("output")
 MODELS_DIR = Path("models")
 RESULTS_FILE = "segmentation_results.csv"
 
+# Single source of truth for model segmentation controls.
+MODEL_SEGMENT_KWARGS = {
+    "silero-vad": {
+        "threshold": 0.7,
+        "min_speech_duration_ms": 300,
+        "min_silence_duration_ms": 300,
+    },
+    "whisper-base": {
+        "threshold": 0.7,
+        "min_speech_duration_ms": 300,
+        "min_silence_duration_ms": 300,
+    },
+    "simple-vad": {
+        "threshold_db": -25, # Closer to 0 => more stric
+        "min_silence_duration": 0.3,
+        "min_segment_duration": 0.3,
+    },
+}
+
 # Create directories
 OUTPUT_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
@@ -63,9 +82,18 @@ class SileroVADSegmenter:
             print(f"✗ Failed to load {self.name}: {e}")
             return False
     
-    def segment(self, audio_path, min_speech_duration_ms=300, min_silence_duration_ms=300):
+    def segment(
+        self,
+        audio_path,
+        threshold=None,
+        min_speech_duration_ms=None,
+        min_silence_duration_ms=None,
+    ):
         """Segment audio using VAD"""
         try:
+            if threshold is None or min_speech_duration_ms is None or min_silence_duration_ms is None:
+                raise ValueError("Missing Silero segmentation parameters. Configure MODEL_SEGMENT_KWARGS['silero-vad'].")
+
             # Load audio
             wav, sr = librosa.load(audio_path, sr=16000, mono=True)
             wav_tensor = torch.FloatTensor(wav)  # CPU tensor
@@ -75,6 +103,7 @@ class SileroVADSegmenter:
                 wav_tensor,
                 self.model,
                 sampling_rate=16000,
+                threshold=threshold,
                 min_speech_duration_ms=min_speech_duration_ms,
                 min_silence_duration_ms=min_silence_duration_ms,
                 return_seconds=False
@@ -134,22 +163,75 @@ class WhisperSegmenter:
             print(f"✗ Failed to load {self.name}: {e}")
             return False
     
-    def segment(self, audio_path):
+    def segment(
+        self,
+        audio_path,
+        threshold=None,
+        min_speech_duration_ms=None,
+        min_silence_duration_ms=None,
+    ):
         """Segment audio using Whisper word timestamps"""
         try:
+            if threshold is None or min_speech_duration_ms is None or min_silence_duration_ms is None:
+                raise ValueError("Missing Whisper segmentation parameters. Configure MODEL_SEGMENT_KWARGS['whisper-base'].")
+
             import whisper
             
             # Transcribe with word timestamps
             result = self.model.transcribe(
                 str(audio_path),
                 word_timestamps=True,
-                language=None  # Auto-detect
+                language=None,  # Auto-detect
+                no_speech_threshold=threshold
             )
             
             # Load audio for extraction
             wav, sr = librosa.load(audio_path, sr=16000, mono=True)
             
             segments = []
+            current_words = []
+            current_start_ms = None
+            current_end_ms = None
+
+            def flush_segment():
+                nonlocal current_words, current_start_ms, current_end_ms
+                if not current_words or current_start_ms is None or current_end_ms is None:
+                    current_words = []
+                    current_start_ms = None
+                    current_end_ms = None
+                    return None
+
+                duration_ms = current_end_ms - current_start_ms
+                if duration_ms < min_speech_duration_ms:
+                    current_words = []
+                    current_start_ms = None
+                    current_end_ms = None
+                    return None
+
+                start_sample = int((current_start_ms / 1000) * sr)
+                end_sample = int((current_end_ms / 1000) * sr)
+                segment_wav = wav[start_sample:end_sample]
+
+                filename = f"{current_start_ms}_{current_end_ms}.wav"
+                output_path = OUTPUT_DIR / self.name / filename
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                sf.write(output_path, segment_wav, 16000)
+
+                segment_record = {
+                    'filename': filename,
+                    'start_time_ms': current_start_ms,
+                    'end_time_ms': current_end_ms,
+                    'duration_ms': duration_ms,
+                    'model_name': self.name,
+                    'word_text': ' '.join(w.get('word', '').strip() for w in current_words).strip(),
+                    'full_path': str(output_path)
+                }
+
+                current_words = []
+                current_start_ms = None
+                current_end_ms = None
+                return segment_record
             
             # Extract word-level segments
             for segment in result['segments']:
@@ -159,29 +241,29 @@ class WhisperSegmenter:
                         end_s = word_info['end']
                         start_ms = int(start_s * 1000)
                         end_ms = int(end_s * 1000)
-                        duration_ms = end_ms - start_ms
-                        
-                        # Extract audio segment
-                        start_sample = int(start_s * sr)
-                        end_sample = int(end_s * sr)
-                        segment_wav = wav[start_sample:end_sample]
-                        
-                        # Save segment
-                        filename = f"{start_ms}_{end_ms}.wav"
-                        output_path = OUTPUT_DIR / self.name / filename
-                        output_path.parent.mkdir(parents=True, exist_ok=True)
-                        
-                        sf.write(output_path, segment_wav, 16000)
-                        
-                        segments.append({
-                            'filename': filename,
-                            'start_time_ms': start_ms,
-                            'end_time_ms': end_ms,
-                            'duration_ms': duration_ms,
-                            'model_name': self.name,
-                            'word_text': word_info.get('word', ''),
-                            'full_path': str(output_path)
-                        })
+                        if not current_words:
+                            current_words = [word_info]
+                            current_start_ms = start_ms
+                            current_end_ms = end_ms
+                            continue
+
+                        gap_ms = start_ms - current_end_ms
+                        if gap_ms <= min_silence_duration_ms:
+                            current_words.append(word_info)
+                            current_end_ms = max(current_end_ms, end_ms)
+                            continue
+
+                        flushed = flush_segment()
+                        if flushed:
+                            segments.append(flushed)
+
+                        current_words = [word_info]
+                        current_start_ms = start_ms
+                        current_end_ms = end_ms
+
+            flushed = flush_segment()
+            if flushed:
+                segments.append(flushed)
             
             return segments
             
@@ -200,9 +282,12 @@ class SimpleVADSegmenter:
         print(f"✓ Loaded {self.name}")
         return True
     
-    def segment(self, audio_path, threshold_db=-40, min_silence_duration=0.3, min_segment_duration=0.2):
+    def segment(self, audio_path, threshold_db=None, min_silence_duration=None, min_segment_duration=None):
         """Segment using energy-based VAD"""
         try:
+            if threshold_db is None or min_silence_duration is None or min_segment_duration is None:
+                raise ValueError("Missing Simple VAD parameters. Configure MODEL_SEGMENT_KWARGS['simple-vad'].")
+
             # Load audio
             wav, sr = librosa.load(audio_path, sr=16000, mono=True)
             
@@ -211,11 +296,30 @@ class SimpleVADSegmenter:
             
             # Find speech segments
             is_speech = audio_db > threshold_db
+
+            # If no speech is detected at this threshold, return early.
+            if not np.any(is_speech):
+                return []
+
+            # Close short silent gaps so we require a minimum silence to split segments.
+            min_silence_samples = int(min_silence_duration * sr)
+            if min_silence_samples > 0:
+                speech_idx = np.flatnonzero(is_speech)
+                for left_idx, right_idx in zip(speech_idx[:-1], speech_idx[1:]):
+                    gap = right_idx - left_idx - 1
+                    if 0 < gap < min_silence_samples:
+                        is_speech[left_idx + 1:right_idx] = True
             
             # Find boundaries
             boundaries = np.diff(is_speech.astype(int))
-            starts = np.where(boundaries == 1)[0]
-            ends = np.where(boundaries == -1)[0]
+            starts = np.where(boundaries == 1)[0] + 1
+            ends = np.where(boundaries == -1)[0] + 1
+
+            # Handle speech that starts at sample 0 or extends to the end of the file.
+            if is_speech[0]:
+                starts = np.insert(starts, 0, 0)
+            if is_speech[-1]:
+                ends = np.append(ends, len(is_speech))
             
             # Align starts and ends
             if len(starts) > 0 and len(ends) > 0:
@@ -227,7 +331,6 @@ class SimpleVADSegmenter:
                     ends = ends[:len(starts)]
             
             segments = []
-            min_silence_samples = int(min_silence_duration * sr)
             min_segment_samples = int(min_segment_duration * sr)
             
             for start_sample, end_sample in zip(starts, ends):
@@ -296,7 +399,7 @@ def main():
         WhisperSegmenter("base"),
         SimpleVADSegmenter()
     ]
-    
+
     # Load models
     print("Loading models...")
     loaded_models = []
@@ -318,7 +421,11 @@ def main():
         print('=' * 80)
         
         start_time = datetime.now()
-        segments = model.segment(audio_file)
+        segment_kwargs = MODEL_SEGMENT_KWARGS.get(model.name)
+        if segment_kwargs is None:
+            print(f"ERROR: No segmentation config found for model '{model.name}'")
+            continue
+        segments = model.segment(audio_file, **segment_kwargs)
         end_time = datetime.now()
         
         processing_time = (end_time - start_time).total_seconds()
