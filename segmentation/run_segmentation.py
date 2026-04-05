@@ -40,7 +40,7 @@ MODEL_SEGMENT_KWARGS = {
         "min_speech_duration_ms": 300,
         "min_silence_duration_ms": 300,
     },
-    "simple-vad-cancel": {
+    "simple-vad": {
         "threshold_db": -25, # Closer to 0 => more stric (default is -30 dB for energy-based VAD)
         "min_silence_duration": 0.28,
         "min_segment_duration": 0.3,

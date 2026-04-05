@@ -18,9 +18,32 @@ import json
 from collections import defaultdict
 
 # Configuration
-RESULTS_FILE = Path("../diarisation/diarisation_results.csv")
-OUTPUT_DIR = Path("reports")
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
+RESULTS_FILE = PROJECT_ROOT / "diarisation" / "diarisation_results.csv"
+OUTPUT_DIR = BASE_DIR / "reports"
+HOTKEYS_FILE = OUTPUT_DIR / "hotkeys.json"
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+DEFAULT_HOTKEYS = {
+    "prev_segment": "Left",
+    "next_segment": "Right",
+    "play_audio": "space",
+    "delete_file": "q",
+    "female": "z",
+    "male_1": "x",
+    "male_2": "c"
+}
+
+HOTKEY_LABELS = {
+    "prev_segment": "Previous segment",
+    "next_segment": "Next segment",
+    "play_audio": "Play audio",
+    "delete_file": "Delete file",
+    "female": "Female",
+    "male_1": "Male 1",
+    "male_2": "Male 2"
+}
 
 class DiarisationReviewTool:
     """Interactive tool for reviewing diarisation results"""
@@ -37,6 +60,8 @@ class DiarisationReviewTool:
         self.current_audio = None
         self.current_sr = None
         self.corrections = []
+        self.hotkeys = self.load_hotkeys()
+        self.bound_hotkey_sequences = []
         
         self.setup_ui()
         self.load_data()
@@ -62,6 +87,7 @@ class DiarisationReviewTool:
         
         ttk.Button(top_frame, text="Generate Report", command=self.generate_report).pack(side=tk.RIGHT, padx=5)
         ttk.Button(top_frame, text="Export Corrections", command=self.export_corrections).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(top_frame, text="Hotkeys", command=self.open_hotkeys_editor).pack(side=tk.RIGHT, padx=5)
         
         # Info frame
         info_frame = ttk.LabelFrame(self.root, text="Segment Info", padding="10")
@@ -110,6 +136,7 @@ class DiarisationReviewTool:
         
         self.stats_text = tk.Text(stats_frame, height=6, width=100)
         self.stats_text.pack(fill=tk.X)
+        self.bind_hotkeys()
     
     def load_data(self):
         """Load diarisation results"""
@@ -132,6 +159,210 @@ class DiarisationReviewTool:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load data: {e}")
             self.root.quit()
+
+    def load_hotkeys(self):
+        """Load hotkeys from disk, falling back to defaults."""
+        hotkeys = DEFAULT_HOTKEYS.copy()
+        if HOTKEYS_FILE.exists():
+            try:
+                with open(HOTKEYS_FILE, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    for action in DEFAULT_HOTKEYS:
+                        val = loaded.get(action)
+                        if isinstance(val, str) and val.strip():
+                            hotkeys[action] = val.strip()
+            except Exception as e:
+                print(f"Failed to load hotkeys from {HOTKEYS_FILE}: {e}")
+
+        self.save_hotkeys(hotkeys)
+        return hotkeys
+
+    def save_hotkeys(self, hotkeys=None):
+        """Persist hotkeys to JSON file."""
+        if hotkeys is None:
+            hotkeys = self.hotkeys
+
+        with open(HOTKEYS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(hotkeys, f, indent=2)
+
+    def key_to_sequence(self, key_text):
+        """Convert user key text into a Tk binding sequence."""
+        if not isinstance(key_text, str):
+            return None
+
+        raw = key_text.strip()
+        if not raw:
+            return None
+
+        if raw.startswith('<') and raw.endswith('>'):
+            return raw
+
+        parts = [p for p in raw.replace(' ', '').split('+') if p]
+        if not parts:
+            return None
+
+        special = {
+            'left': 'Left',
+            'right': 'Right',
+            'up': 'Up',
+            'down': 'Down',
+            'space': 'space',
+            'delete': 'Delete',
+            'del': 'Delete',
+            'enter': 'Return',
+            'return': 'Return',
+            'backspace': 'BackSpace',
+            'tab': 'Tab',
+            'esc': 'Escape',
+            'escape': 'Escape'
+        }
+        modifier_map = {
+            'ctrl': 'Control',
+            'control': 'Control',
+            'alt': 'Alt',
+            'shift': 'Shift'
+        }
+
+        if len(parts) == 1:
+            key = parts[0]
+            return f"<{special.get(key.lower(), key)}>"
+
+        mods = []
+        for mod in parts[:-1]:
+            mapped = modifier_map.get(mod.lower())
+            if mapped and mapped not in mods:
+                mods.append(mapped)
+
+        key = special.get(parts[-1].lower(), parts[-1])
+        if mods:
+            return f"<{ '-'.join(mods) }-{key}>"
+        return f"<{key}>"
+
+    def bind_hotkeys(self):
+        """Bind all configured hotkeys, replacing old bindings."""
+        for seq in self.bound_hotkey_sequences:
+            self.root.unbind_all(seq)
+        self.bound_hotkey_sequences = []
+
+        for action, key_text in self.hotkeys.items():
+            seq = self.key_to_sequence(key_text)
+            if not seq:
+                continue
+            self.root.bind_all(seq, lambda event, a=action: self.handle_hotkey(a, event))
+            self.bound_hotkey_sequences.append(seq)
+
+    def handle_hotkey(self, action, event=None):
+        """Dispatch hotkey actions for diarisation review."""
+        focus_widget = self.root.focus_get()
+        if isinstance(focus_widget, (tk.Entry, ttk.Entry)):
+            return
+
+        actions = {
+            'prev_segment': self.prev_segment,
+            'next_segment': self.next_segment,
+            'play_audio': self.play_audio,
+            'female': lambda: self.quick_assign('FEMALE'),
+            'male_1': lambda: self.quick_assign('MALE_1'),
+            'male_2': lambda: self.quick_assign('MALE_2')
+        }
+
+        action_fn = actions.get(action)
+        if action_fn is not None:
+            action_fn()
+
+    def open_hotkeys_editor(self):
+        """Open a dialog to edit and save keyboard shortcuts."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Hotkeys")
+        dialog.geometry("480x460")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        container = ttk.Frame(dialog, padding="10")
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(
+            container,
+            text="Edit keys (examples: t, Delete, Left, Ctrl+t)."
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        rows = ttk.Frame(container)
+        rows.pack(fill=tk.BOTH, expand=True)
+
+        editors = {}
+        for idx, action in enumerate(DEFAULT_HOTKEYS.keys()):
+            ttk.Label(rows, text=HOTKEY_LABELS.get(action, action), width=22).grid(row=idx, column=0, sticky='w', padx=(0, 8), pady=3)
+            var = tk.StringVar(value=self.hotkeys.get(action, DEFAULT_HOTKEYS[action]))
+            ttk.Entry(rows, textvariable=var, width=24).grid(row=idx, column=1, sticky='w', pady=3)
+            editors[action] = var
+
+        def save_and_close():
+            updated = {}
+            seen = {}
+
+            for action, var in editors.items():
+                key_text = var.get().strip()
+                seq = self.key_to_sequence(key_text)
+                if not key_text or seq is None:
+                    messagebox.showerror("Invalid hotkey", f"Invalid key for {HOTKEY_LABELS.get(action, action)}")
+                    return
+
+                sig = seq.lower()
+                if sig in seen:
+                    other = HOTKEY_LABELS.get(seen[sig], seen[sig])
+                    current = HOTKEY_LABELS.get(action, action)
+                    messagebox.showerror("Duplicate hotkey", f"{current} duplicates {other} ({key_text})")
+                    return
+
+                seen[sig] = action
+                updated[action] = key_text
+
+            try:
+                self.hotkeys = updated
+                self.save_hotkeys(self.hotkeys)
+                self.bind_hotkeys()
+                dialog.destroy()
+                messagebox.showinfo("Success", f"Hotkeys saved to:\n{HOTKEYS_FILE}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save hotkeys: {e}")
+
+        button_row = ttk.Frame(container)
+        button_row.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(button_row, text="Save", command=save_and_close).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+
+    def resolve_audio_path(self, csv_path_value):
+        """Resolve CSV audio_path to absolute path."""
+        audio_path = Path(str(csv_path_value))
+        if not audio_path.is_absolute():
+            audio_path = PROJECT_ROOT / audio_path
+        return audio_path.resolve()
+
+    def to_project_relative(self, absolute_path):
+        """Store paths in CSV relative to project root."""
+        return str(Path(absolute_path).resolve().relative_to(PROJECT_ROOT))
+
+    def build_reassigned_output_path(self, segment, new_speaker):
+        """Build collision-safe target path for reassigned speaker audio."""
+        model_name = str(segment['diarisation_model'])
+        start_time_ms = int(segment['start_time_ms'])
+        end_time_ms = int(segment['end_time_ms'])
+
+        out_dir = PROJECT_ROOT / "diarisation" / "output" / "by_model" / model_name / new_speaker
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        base_name = f"{start_time_ms}_{end_time_ms}_{new_speaker}"
+        candidate = out_dir / f"{base_name}.wav"
+        if not candidate.exists():
+            return candidate
+
+        i = 1
+        while True:
+            alt_candidate = out_dir / f"{base_name}_alt{i}.wav"
+            if not alt_candidate.exists():
+                return alt_candidate
+            i += 1
     
     def on_model_change(self, event=None):
         """Handle model selection change"""
@@ -185,6 +416,11 @@ Model: {segment['diarisation_model']}"""
         # Load and display waveform
         try:
             audio_path = Path(segment['audio_path'])
+            if not audio_path.is_absolute():
+                # Diarisation CSV stores paths relative to the project root.
+                audio_path = PROJECT_ROOT / audio_path
+
+            audio_path = audio_path.resolve()
             if audio_path.exists():
                 self.current_audio, self.current_sr = sf.read(audio_path)
                 
@@ -283,7 +519,7 @@ Speaker distribution:\n"""
             messagebox.showerror("Error", f"Failed to play audio: {e}")
     
     def reassign_speaker(self):
-        """Reassign current segment to new speaker"""
+        """Reassign current segment to new speaker and persist to CSV/files."""
         new_speaker = self.new_speaker_var.get().strip()
         if not new_speaker:
             messagebox.showwarning("Warning", "Enter new speaker ID")
@@ -293,22 +529,81 @@ Speaker distribution:\n"""
             (self.df['diarisation_model'] == self.current_model) &
             (self.df['speaker_id'] == self.current_speaker)
         ]
+        if len(speaker_df) == 0:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        if self.current_idx >= len(speaker_df):
+            self.current_idx = len(speaker_df) - 1
+
         segment = speaker_df.iloc[self.current_idx]
+        row_index = segment.name
+
+        old_speaker = str(segment['speaker_id'])
+        old_audio_rel = str(segment['audio_path'])
+        old_audio_path = self.resolve_audio_path(old_audio_rel)
+        if not old_audio_path.exists():
+            messagebox.showerror("Error", f"Audio file not found:\n{old_audio_path}")
+            return
+
+        new_audio_path = self.build_reassigned_output_path(segment, new_speaker)
+        temp_path = new_audio_path.with_name(f"{new_audio_path.stem}.__tmp__.wav")
+
+        try:
+            y, sr = sf.read(old_audio_path)
+            sf.write(temp_path, y, sr)
+
+            if not temp_path.exists() or temp_path.stat().st_size == 0:
+                raise RuntimeError("Reassigned file was not written correctly")
+
+            os.replace(temp_path, new_audio_path)
+
+            self.df.at[row_index, 'speaker_id'] = new_speaker
+            self.df.at[row_index, 'audio_path'] = self.to_project_relative(new_audio_path)
+            self.df.to_csv(RESULTS_FILE, index=False)
+
+            # Delete old file only if no other rows still reference it.
+            remaining_refs = (self.df['audio_path'].astype(str) == old_audio_rel).sum()
+            if remaining_refs == 0 and old_audio_path.exists() and old_audio_path.resolve() != new_audio_path.resolve():
+                old_audio_path.unlink()
+
+        except Exception as e:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            messagebox.showerror("Error", f"Failed to reassign speaker: {e}")
+            return
         
         correction = {
             'model_name': self.current_model,
             'segment_filename': segment['segment_filename'],
-            'old_speaker': segment['speaker_id'],
+            'old_speaker': old_speaker,
             'new_speaker': new_speaker,
             'confidence': segment['confidence'],
+            'old_audio_path': old_audio_rel,
+            'new_audio_path': self.to_project_relative(new_audio_path),
             'timestamp': datetime.now().isoformat()
         }
         
         self.corrections.append(correction)
-        messagebox.showinfo("Reassigned", f"Segment reassigned: {segment['speaker_id']} → {new_speaker}")
-        
-        # Move to next
-        self.next_segment()
+
+        # Refresh speaker buckets and stay near the updated row.
+        self.on_model_change()
+        self.current_speaker = new_speaker
+        self.speaker_var.set(new_speaker)
+        self.on_speaker_change()
+
+        updated_df = self.df[
+            (self.df['diarisation_model'] == self.current_model) &
+            (self.df['speaker_id'] == new_speaker)
+        ]
+        if row_index in updated_df.index:
+            self.current_idx = list(updated_df.index).index(row_index)
+            self.update_display()
+
+        messagebox.showinfo("Reassigned", f"Segment reassigned: {old_speaker} → {new_speaker}")
     
     def quick_assign(self, speaker_label):
         """Quick reassignment to predefined speaker"""

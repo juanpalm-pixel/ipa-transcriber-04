@@ -87,14 +87,15 @@ tone-correction/output/**/*
 tone-correction/models/**/*
 !tone-correction/models/.gitkeep
 
-# Keep CSV results and reports
-!*.csv
-!*_report.txt
-!*_report.html
+# CSV results and reports
+.csv
+_report.txt
+_report.html
 !*.md
 
 # But these specific CSV files are too large, so ignore them
 segmentation/segmentation_results.csv
+diarisation/diarisation_results.csv
 
 
 # Input files (exclude to save space, but track .gitkeep)
