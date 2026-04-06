@@ -1,8 +1,8 @@
 # IPA Transcriber 04 - Requirements
 # Generated for pip users (conda environment.yml is recommended)
 
-torch>=2.0.0
-torchaudio>=2.0.0
+torch>=2.5.*
+torchaudio>=2.5.*
 transformers>=4.35.0
 accelerate>=0.24.0
 datasets>=2.14.0
@@ -15,14 +15,14 @@ audioread>=3.0.0
 resampy>=0.4.0
 
 # Diarization
-pyannote.audio>=3.0.0
-pyannote.core>=5.0.0
-pyannote.database>=5.0.0
-pyannote.metrics>=3.2.0
+pyannote.audio==3.3.2
+pyannote.core>=5.0.0,<6
+pyannote.database>=5.0.0,<6
+pyannote.metrics>=3.2.0,<4
 
 # Speech analysis
 praat-parselmouth>=0.4.3
-webrtcvad>=2.0.10
+webrtcvad-wheels>=2.0.11.post1
 silero-vad>=4.0.0
 
 # Additional models
