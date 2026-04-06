@@ -96,6 +96,7 @@ _report.html
 # But these specific CSV files are too large, so ignore them
 segmentation/segmentation_results.csv
 diarisation/diarisation_results.csv
+merge.md
 
 
 # Input files (exclude to save space, but track .gitkeep)
