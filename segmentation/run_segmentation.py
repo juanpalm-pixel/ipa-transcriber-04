@@ -23,10 +23,13 @@ import json
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Configuration
-INPUT_DIR = Path("../input")
-OUTPUT_DIR = Path("output")
-MODELS_DIR = Path("models")
-RESULTS_FILE = "segmentation_results.csv"
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+
+INPUT_DIR = PROJECT_ROOT / "input"
+OUTPUT_DIR = SCRIPT_DIR / "output"
+MODELS_DIR = SCRIPT_DIR / "models"
+RESULTS_FILE = SCRIPT_DIR / "segmentation_results.csv"
 
 # Single source of truth for model segmentation controls.
 MODEL_SEGMENT_KWARGS = {

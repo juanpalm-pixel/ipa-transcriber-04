@@ -7,8 +7,9 @@ dependencies:
   - python=3.10
   - pip
   - cpuonly  # Ensure CPU-only installation for PyTorch
-  - pytorch>=2.0.0
-  - torchaudio>=2.0.0
+  - pytorch>=2.5.*
+  - torchaudio>=2.5.*
+  - ffmpeg<7
   - numpy
   - pandas
   - matplotlib
@@ -28,10 +29,10 @@ dependencies:
     - resampy>=0.4.0
     
     # Diarization
-    - pyannote.audio>=3.0.0
-    - pyannote.core>=5.0.0
-    - pyannote.database>=5.0.0
-    - pyannote.metrics>=3.2.0
+    - pyannote.audio==3.3.2
+    - pyannote.core>=5.0.0,<6
+    - pyannote.database>=5.0.0,<6
+    - pyannote.metrics>=3.2.0,<4
     
     # Speech analysis
     - praat-parselmouth>=0.4.3

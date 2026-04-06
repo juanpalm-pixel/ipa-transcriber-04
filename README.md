@@ -50,7 +50,7 @@ Each stage includes a verification step with interactive review tools.
 3. **Create conda environment**
    ```bash
    conda env create -f environment.yml
-   conda activate ipa-transcriber-04
+   conda activate ipa-transcriber-4
    ```
 
    Or using pip (CPU-only PyTorch):
@@ -87,6 +87,30 @@ Each stage includes a verification step with interactive review tools.
    # ... and so on
    ```
 
+### One-Command Cycle (Windows)
+
+Run the scripted cycle from the project root:
+
+```bat
+run_cycle.bat
+```
+
+This launcher runs the following sequence and stops immediately if any step fails:
+
+1. `segmentation\run_segmentation.py`
+2. `segmentation\compare_models.py`
+3. `diarisation\run_diarisation.py`
+4. `diarisation\compare_models.py`
+5. `segmentation\run_segmentation.py`
+6. `segmentation\compare_models.py`
+
+If required, activate your environment first:
+
+```bash
+conda activate ipa-transcriber-04
+run_cycle.bat
+```
+
 ## Project Structure
 
 ```
@@ -98,6 +122,7 @@ ipa-transcriber(4.0)/
 ├── MODELS.md                # Model comparison results
 ├── PIPELINE.md              # Detailed pipeline documentation
 ├── RESULTS.md               # Testing results and findings
+├── run_cycle.bat            # Windows one-command stage cycle launcher
 │
 ├── input/                   # Input audio files
 │   └── 1.wav               # Test audio (5 minutes)

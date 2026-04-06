@@ -8,10 +8,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 import json
+import sys
 
 # Configuration
-RESULTS_FILE = "segmentation_results.csv"
-REPORT_DIR = Path("../verification_1/reports")
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+RESULTS_FILE = SCRIPT_DIR / "segmentation_results.csv"
+REPORT_DIR = PROJECT_ROOT / "verification_1" / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_results():
@@ -22,7 +25,7 @@ def load_results():
         return df
     except FileNotFoundError:
         print(f"ERROR: {RESULTS_FILE} not found. Run run_segmentation.py first.")
-        return None
+        sys.exit(1)
 
 def analyze_segments(df):
     """Analyze segmentation patterns"""

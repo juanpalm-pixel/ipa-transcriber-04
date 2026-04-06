@@ -18,11 +18,11 @@ import json
 from collections import defaultdict
 
 # Configuration
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
 RESULTS_FILE = PROJECT_ROOT / "diarisation" / "diarisation_results.csv"
-OUTPUT_DIR = BASE_DIR / "reports"
-HOTKEYS_FILE = OUTPUT_DIR / "hotkeys.json"
+OUTPUT_DIR = SCRIPT_DIR / "reports"
+HOTKEYS_FILE = SCRIPT_DIR / "hotkeys.json"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 DEFAULT_HOTKEYS = {
@@ -30,9 +30,14 @@ DEFAULT_HOTKEYS = {
     "next_segment": "Right",
     "play_audio": "space",
     "delete_file": "q",
+    "focus_trim_start": "e",
+    "focus_trim_end": "r",
+    "trim_and_save": "t",
+    "extract_new_segment": "y",
     "female": "z",
-    "male_1": "x",
-    "male_2": "c"
+    "male": "x",
+    "male_1": "c",
+    "male_2": "v"
 }
 
 HOTKEY_LABELS = {
@@ -40,7 +45,12 @@ HOTKEY_LABELS = {
     "next_segment": "Next segment",
     "play_audio": "Play audio",
     "delete_file": "Delete file",
+    "focus_trim_start": "Focus trim start",
+    "focus_trim_end": "Focus trim end",
+    "trim_and_save": "Trim and save",
+    "extract_new_segment": "Extract new segment",
     "female": "Female",
+    "male": "Male",
     "male_1": "Male 1",
     "male_2": "Male 2"
 }
@@ -54,12 +64,17 @@ class DiarisationReviewTool:
         self.root.geometry("1400x900")
         
         self.df = None
+        self.current_segmentation_model = None
         self.current_model = None
         self.current_speaker = None
         self.current_idx = 0
         self.current_audio = None
         self.current_sr = None
         self.corrections = []
+        self.trim_start_var = None
+        self.trim_end_var = None
+        self.trim_start_entry = None
+        self.trim_end_entry = None
         self.hotkeys = self.load_hotkeys()
         self.bound_hotkey_sequences = []
         
@@ -73,7 +88,15 @@ class DiarisationReviewTool:
         top_frame = ttk.Frame(self.root, padding="10")
         top_frame.pack(fill=tk.X)
         
-        ttk.Label(top_frame, text="Model:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(top_frame, text="Segmentation model:").pack(side=tk.LEFT, padx=5)
+
+        self.segmentation_model_var = tk.StringVar()
+        self.segmentation_model_combo = ttk.Combobox(top_frame, textvariable=self.segmentation_model_var, width=25)
+        self.segmentation_model_combo.pack(side=tk.LEFT, padx=5)
+        self.segmentation_model_combo.bind('<<ComboboxSelected>>', self.on_segmentation_model_change)
+
+        ttk.Label(top_frame, text="Diarisation model:").pack(side=tk.LEFT, padx=15)
+
         self.model_var = tk.StringVar()
         self.model_combo = ttk.Combobox(top_frame, textvariable=self.model_var, width=25)
         self.model_combo.pack(side=tk.LEFT, padx=5)
@@ -95,6 +118,8 @@ class DiarisationReviewTool:
         
         self.info_text = tk.Text(info_frame, height=4, width=100)
         self.info_text.pack(fill=tk.X)
+        self.info_text.configure(state=tk.DISABLED)
+        self.info_text.bind('<Escape>', self.release_focus)
         
         # Waveform frame
         wave_frame = ttk.LabelFrame(self.root, text="Waveform", padding="10")
@@ -110,6 +135,7 @@ class DiarisationReviewTool:
         
         ttk.Button(control_frame, text="<< Previous", command=self.prev_segment).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Play Audio", command=self.play_audio).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="Delete File", command=self.delete_segment_file).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Next >>", command=self.next_segment).pack(side=tk.LEFT, padx=5)
         
         self.progress_label = ttk.Label(control_frame, text="0 / 0")
@@ -122,13 +148,31 @@ class DiarisationReviewTool:
         ttk.Label(reassign_frame, text="Reassign to:").pack(side=tk.LEFT, padx=5)
         
         self.new_speaker_var = tk.StringVar()
-        ttk.Entry(reassign_frame, textvariable=self.new_speaker_var, width=20).pack(side=tk.LEFT, padx=5)
+        self.new_speaker_entry = ttk.Entry(reassign_frame, textvariable=self.new_speaker_var, width=20)
+        self.new_speaker_entry.pack(side=tk.LEFT, padx=5)
         ttk.Button(reassign_frame, text="Reassign", command=self.reassign_speaker).pack(side=tk.LEFT, padx=5)
         
         ttk.Label(reassign_frame, text="Quick assign:").pack(side=tk.LEFT, padx=15)
         ttk.Button(reassign_frame, text="Female", command=lambda: self.quick_assign("FEMALE")).pack(side=tk.LEFT, padx=2)
+        ttk.Button(reassign_frame, text="Male", command=lambda: self.quick_assign("MALE")).pack(side=tk.LEFT, padx=2)
         ttk.Button(reassign_frame, text="Male 1", command=lambda: self.quick_assign("MALE_1")).pack(side=tk.LEFT, padx=2)
         ttk.Button(reassign_frame, text="Male 2", command=lambda: self.quick_assign("MALE_2")).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(reassign_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+
+        ttk.Label(reassign_frame, text="Trim start ms:").pack(side=tk.LEFT, padx=5)
+        self.trim_start_var = tk.StringVar(value="0")
+        self.trim_start_entry = ttk.Entry(reassign_frame, textvariable=self.trim_start_var, width=8)
+        self.trim_start_entry.pack(side=tk.LEFT, padx=2)
+        self.trim_start_entry.bind('<Return>', self.on_trim_entry_return)
+
+        ttk.Label(reassign_frame, text="Trim end ms:").pack(side=tk.LEFT, padx=5)
+        self.trim_end_var = tk.StringVar(value="0")
+        self.trim_end_entry = ttk.Entry(reassign_frame, textvariable=self.trim_end_var, width=8)
+        self.trim_end_entry.pack(side=tk.LEFT, padx=2)
+        self.trim_end_entry.bind('<Return>', self.on_trim_entry_return)
+
+        ttk.Button(reassign_frame, text="Extract New Segment", command=self.extract_new_segment).pack(side=tk.LEFT, padx=5)
         
         # Statistics frame
         stats_frame = ttk.LabelFrame(self.root, text="Speaker Statistics", padding="10")
@@ -136,22 +180,38 @@ class DiarisationReviewTool:
         
         self.stats_text = tk.Text(stats_frame, height=6, width=100)
         self.stats_text.pack(fill=tk.X)
+        self.stats_text.configure(state=tk.DISABLED)
+        self.stats_text.bind('<Escape>', self.release_focus)
+
+        self.new_speaker_entry.bind('<Escape>', self.release_focus)
+        self.trim_start_entry.bind('<Escape>', self.release_focus)
+        self.trim_end_entry.bind('<Escape>', self.release_focus)
+        self.root.bind_all('<Escape>', self.release_focus)
         self.bind_hotkeys()
     
     def load_data(self):
         """Load diarisation results"""
         try:
             self.df = pd.read_csv(RESULTS_FILE)
+
+            # Normalize CSV headers/values to handle accidental surrounding spaces.
+            self.df.columns = [str(c).strip() for c in self.df.columns]
+            for col in ['segmentation_model', 'model_name', 'diarisation_model', 'speaker_id', 'audio_path', 'segment_filename']:
+                if col in self.df.columns:
+                    self.df[col] = self.df[col].apply(lambda v: v.strip() if isinstance(v, str) else v)
+
+            segmentation_column = self.get_segmentation_column()
+            if segmentation_column is None:
+                raise KeyError("Expected 'segmentation_model' or 'model_name' column in diarisation_results.csv")
+
+            segmentation_models = [m for m in self.df[segmentation_column].dropna().unique().tolist() if str(m).strip()]
+            self.segmentation_model_combo['values'] = segmentation_models
+
+            if segmentation_models:
+                self.segmentation_model_var.set(segmentation_models[0])
+                self.on_segmentation_model_change()
             
-            # Get unique models
-            models = self.df['diarisation_model'].unique().tolist()
-            self.model_combo['values'] = models
-            
-            if models:
-                self.model_var.set(models[0])
-                self.on_model_change()
-            
-            messagebox.showinfo("Success", f"Loaded {len(self.df)} diarised segments from {len(models)} models")
+            messagebox.showinfo("Success", f"Loaded {len(self.df)} diarised segments from {len(segmentation_models)} segmentation models")
             
         except FileNotFoundError:
             messagebox.showerror("Error", f"Results file not found: {RESULTS_FILE}\nRun diarisation first!")
@@ -159,6 +219,16 @@ class DiarisationReviewTool:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load data: {e}")
             self.root.quit()
+
+    def get_segmentation_column(self):
+        """Return segmentation column name used by current dataframe."""
+        if self.df is None:
+            return None
+        if 'segmentation_model' in self.df.columns:
+            return 'segmentation_model'
+        if 'model_name' in self.df.columns:
+            return 'model_name'
+        return None
 
     def load_hotkeys(self):
         """Load hotkeys from disk, falling back to defaults."""
@@ -239,6 +309,24 @@ class DiarisationReviewTool:
             return f"<{ '-'.join(mods) }-{key}>"
         return f"<{key}>"
 
+    def get_filtered_df(self):
+        """Return rows matching the current segmentation and diarisation model selections."""
+        if self.df is None:
+            return None
+
+        filtered_df = self.df
+        segmentation_column = self.get_segmentation_column()
+        if segmentation_column is None:
+            return filtered_df.iloc[0:0]
+
+        if self.current_segmentation_model:
+            filtered_df = filtered_df[filtered_df[segmentation_column] == self.current_segmentation_model]
+
+        if self.current_model:
+            filtered_df = filtered_df[filtered_df['diarisation_model'] == self.current_model]
+
+        return filtered_df
+
     def bind_hotkeys(self):
         """Bind all configured hotkeys, replacing old bindings."""
         for seq in self.bound_hotkey_sequences:
@@ -255,14 +343,22 @@ class DiarisationReviewTool:
     def handle_hotkey(self, action, event=None):
         """Dispatch hotkey actions for diarisation review."""
         focus_widget = self.root.focus_get()
-        if isinstance(focus_widget, (tk.Entry, ttk.Entry)):
+        in_entry = isinstance(focus_widget, (tk.Entry, ttk.Entry))
+        allowed_when_editing = {'focus_trim_start', 'focus_trim_end'}
+        if in_entry and action not in allowed_when_editing:
             return
 
         actions = {
             'prev_segment': self.prev_segment,
             'next_segment': self.next_segment,
             'play_audio': self.play_audio,
+            'delete_file': self.delete_segment_file,
+            'focus_trim_start': self.focus_trim_start,
+            'focus_trim_end': self.focus_trim_end,
+            'trim_and_save': self.trim_and_save,
+            'extract_new_segment': self.extract_new_segment,
             'female': lambda: self.quick_assign('FEMALE'),
+            'male': lambda: self.quick_assign('MALE'),
             'male_1': lambda: self.quick_assign('MALE_1'),
             'male_2': lambda: self.quick_assign('MALE_2')
         }
@@ -270,6 +366,11 @@ class DiarisationReviewTool:
         action_fn = actions.get(action)
         if action_fn is not None:
             action_fn()
+
+    def release_focus(self, event=None):
+        """Move focus away from editable fields so hotkeys can be used."""
+        self.root.focus_set()
+        return "break"
 
     def open_hotkeys_editor(self):
         """Open a dialog to edit and save keyboard shortcuts."""
@@ -332,6 +433,288 @@ class DiarisationReviewTool:
         ttk.Button(button_row, text="Save", command=save_and_close).pack(side=tk.RIGHT, padx=5)
         ttk.Button(button_row, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
 
+    def focus_trim_start(self):
+        """Focus trim-start field."""
+        if self.trim_start_entry is not None:
+            self.trim_start_entry.focus_set()
+            self.trim_start_entry.selection_range(0, tk.END)
+
+    def focus_trim_end(self):
+        """Focus trim-end field."""
+        if self.trim_end_entry is not None:
+            self.trim_end_entry.focus_set()
+            self.trim_end_entry.selection_range(0, tk.END)
+
+    def on_trim_entry_return(self, event=None):
+        """Leave trim input field when Enter is pressed."""
+        return self.release_focus(event)
+
+    def trim_and_save(self):
+        """Trim the current segment in place while preserving its speaker label."""
+        self.trim_current_segment()
+
+    def trim_current_segment(self):
+        """Trim the current segment to the requested window and overwrite the row."""
+        if self.df is None or self.current_model is None or self.current_speaker is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
+        ]
+        if len(speaker_df) == 0:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        if self.current_idx >= len(speaker_df):
+            self.current_idx = len(speaker_df) - 1
+
+        if self.current_audio is None or self.current_sr is None:
+            messagebox.showwarning("Warning", "No audio loaded")
+            return
+
+        segment = speaker_df.iloc[self.current_idx]
+        row_index = segment.name
+
+        try:
+            trim_start_ms = int(float(self.trim_start_var.get()))
+            trim_end_ms = int(float(self.trim_end_var.get()))
+        except Exception:
+            messagebox.showerror("Error", "Trim start and end must be numbers")
+            return
+
+        segment_duration_ms = int(segment['duration_ms'])
+        if trim_start_ms < 0 or trim_end_ms <= trim_start_ms or trim_end_ms > segment_duration_ms:
+            messagebox.showerror(
+                "Error",
+                f"Trim values must satisfy 0 <= start < end <= {segment_duration_ms} ms"
+            )
+            return
+
+        start_sample = int((trim_start_ms / 1000) * self.current_sr)
+        end_sample = int((trim_end_ms / 1000) * self.current_sr)
+        trimmed_audio = self.current_audio[start_sample:end_sample]
+
+        if trimmed_audio.size == 0:
+            messagebox.showerror("Error", "Trimmed audio is empty")
+            return
+
+        old_audio_rel = str(segment['audio_path'])
+        old_audio_path = self.resolve_audio_path(old_audio_rel)
+        old_filename = str(segment['segment_filename'])
+        speaker_label = str(segment['speaker_id'])
+
+        base_start_ms = int(segment['start_time_ms'])
+        new_start_ms = base_start_ms + trim_start_ms
+        new_end_ms = base_start_ms + trim_end_ms
+
+        output_dir = old_audio_path.parent
+        new_filename = f"{new_start_ms}_{new_end_ms}_{speaker_label}.wav"
+        final_path = output_dir / new_filename
+        if final_path.exists():
+            i = 1
+            while True:
+                candidate = output_dir / f"{new_start_ms}_{new_end_ms}_{speaker_label}_alt{i}.wav"
+                if not candidate.exists():
+                    final_path = candidate
+                    break
+                i += 1
+
+        temp_path = final_path.with_name(f"{final_path.stem}.__tmp__.wav")
+
+        try:
+            sf.write(temp_path, trimmed_audio, self.current_sr)
+            if not temp_path.exists() or temp_path.stat().st_size == 0:
+                raise RuntimeError("Trimmed file was not written correctly")
+
+            os.replace(temp_path, final_path)
+
+            self.df.at[row_index, 'segment_filename'] = final_path.name
+            self.df.at[row_index, 'start_time_ms'] = new_start_ms
+            self.df.at[row_index, 'end_time_ms'] = new_end_ms
+            self.df.at[row_index, 'duration_ms'] = new_end_ms - new_start_ms
+            self.df.at[row_index, 'speaker_id'] = speaker_label
+            self.df.at[row_index, 'audio_path'] = self.to_project_relative(final_path)
+            self.df.to_csv(RESULTS_FILE, index=False)
+
+            remaining_refs = (self.df['audio_path'].astype(str) == old_audio_rel).sum()
+            if remaining_refs == 0 and old_audio_path.exists() and old_audio_path.resolve() != final_path.resolve():
+                old_audio_path.unlink()
+
+            self.corrections.append({
+                'model_name': self.current_model,
+                'segment_filename': final_path.name,
+                'old_segment_filename': old_filename,
+                'new_segment_filename': final_path.name,
+                'old_audio_path': old_audio_rel,
+                'new_audio_path': self.to_project_relative(final_path),
+                'old_speaker': speaker_label,
+                'new_speaker': speaker_label,
+                'start_time_ms': new_start_ms,
+                'end_time_ms': new_end_ms,
+                'label': 'trim',
+                'timestamp': datetime.now().isoformat()
+            })
+
+            self.update_display()
+
+            messagebox.showinfo("Success", f"Trimmed segment saved and opened:\n{final_path}")
+
+        except Exception as e:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            messagebox.showerror("Error", f"Failed to trim segment: {e}")
+
+    def extract_new_segment(self):
+        """Create a new trimmed diarisation segment and insert it after current row."""
+        if self.df is None or self.current_model is None or self.current_speaker is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
+        ]
+        if len(speaker_df) == 0:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        if self.current_idx >= len(speaker_df):
+            self.current_idx = len(speaker_df) - 1
+
+        if self.current_audio is None or self.current_sr is None:
+            messagebox.showwarning("Warning", "No audio loaded")
+            return
+
+        segment = speaker_df.iloc[self.current_idx]
+        row_index = segment.name
+
+        try:
+            trim_start_ms = int(float(self.trim_start_var.get()))
+            trim_end_ms = int(float(self.trim_end_var.get()))
+        except Exception:
+            messagebox.showerror("Error", "Trim start and end must be numbers")
+            return
+
+        segment_duration_ms = int(segment['duration_ms'])
+        if trim_start_ms < 0 or trim_end_ms <= trim_start_ms or trim_end_ms > segment_duration_ms:
+            messagebox.showerror(
+                "Error",
+                f"Trim values must satisfy 0 <= start < end <= {segment_duration_ms} ms"
+            )
+            return
+
+        start_sample = int((trim_start_ms / 1000) * self.current_sr)
+        end_sample = int((trim_end_ms / 1000) * self.current_sr)
+        trimmed_audio = self.current_audio[start_sample:end_sample]
+
+        if trimmed_audio.size == 0:
+            messagebox.showerror("Error", "Trimmed audio is empty")
+            return
+
+        old_audio_path = self.resolve_audio_path(segment['audio_path'])
+        old_filename = str(segment['segment_filename'])
+
+        base_start_ms = int(segment['start_time_ms'])
+        new_start_ms = base_start_ms + trim_start_ms
+        new_end_ms = base_start_ms + trim_end_ms
+        speaker_label = str(segment['speaker_id'])
+
+        output_dir = old_audio_path.parent
+        new_filename = f"{new_start_ms}_{new_end_ms}_{speaker_label}.wav"
+        final_path = output_dir / new_filename
+        if final_path.exists():
+            i = 1
+            while True:
+                candidate = output_dir / f"{new_start_ms}_{new_end_ms}_{speaker_label}_alt{i}.wav"
+                if not candidate.exists():
+                    final_path = candidate
+                    break
+                i += 1
+
+        temp_path = final_path.with_name(f"{final_path.stem}.__tmp__.wav")
+        insert_pos = self.df.index.get_loc(row_index) + 1
+
+        try:
+            sf.write(temp_path, trimmed_audio, self.current_sr)
+            if not temp_path.exists() or temp_path.stat().st_size == 0:
+                raise RuntimeError("Extracted file was not written correctly")
+
+            os.replace(temp_path, final_path)
+
+            new_row = segment.copy()
+            new_row['segment_filename'] = final_path.name
+            new_row['start_time_ms'] = new_start_ms
+            new_row['end_time_ms'] = new_end_ms
+            new_row['duration_ms'] = new_end_ms - new_start_ms
+            new_row['audio_path'] = self.to_project_relative(final_path)
+
+            top = self.df.iloc[:insert_pos]
+            bottom = self.df.iloc[insert_pos:]
+            self.df = pd.concat([top, pd.DataFrame([new_row]), bottom], ignore_index=True)
+            self.df.to_csv(RESULTS_FILE, index=False)
+
+            self.corrections.append({
+                'model_name': self.current_model,
+                'segment_filename': final_path.name,
+                'old_segment_filename': old_filename,
+                'new_segment_filename': final_path.name,
+                'old_audio_path': str(segment['audio_path']),
+                'new_audio_path': self.to_project_relative(final_path),
+                'start_time_ms': new_start_ms,
+                'end_time_ms': new_end_ms,
+                'label': 'extract',
+                'timestamp': datetime.now().isoformat()
+            })
+
+            self.on_model_change()
+            self.current_speaker = speaker_label
+            self.speaker_var.set(speaker_label)
+            self.on_speaker_change()
+
+            speaker_after = self.get_filtered_df()
+            if speaker_after is None:
+                speaker_after = self.df.iloc[0:0]
+            speaker_after = speaker_after[
+                (speaker_after['diarisation_model'] == self.current_model) &
+                (speaker_after['speaker_id'] == speaker_label)
+            ].reset_index(drop=True)
+            match = speaker_after[
+                (speaker_after['segment_filename'] == final_path.name) &
+                (speaker_after['start_time_ms'] == new_start_ms) &
+                (speaker_after['end_time_ms'] == new_end_ms)
+            ]
+            if len(match) > 0:
+                self.current_idx = int(match.index[0])
+                self.update_display()
+
+            messagebox.showinfo(
+                "Success",
+                f"New segment created and inserted after source:\n{final_path}\nOriginal segment kept."
+            )
+
+        except Exception as e:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            messagebox.showerror("Error", f"Failed to extract new segment: {e}")
+
     def resolve_audio_path(self, csv_path_value):
         """Resolve CSV audio_path to absolute path."""
         audio_path = Path(str(csv_path_value))
@@ -367,9 +750,13 @@ class DiarisationReviewTool:
     def on_model_change(self, event=None):
         """Handle model selection change"""
         self.current_model = self.model_var.get()
-        
-        # Update speaker list
-        model_df = self.df[self.df['diarisation_model'] == self.current_model]
+
+        # Update speaker list using both filters
+        model_df = self.get_filtered_df()
+        if model_df is None:
+            return
+
+        model_df = model_df[model_df['diarisation_model'] == self.current_model]
         speakers = model_df['speaker_id'].unique().tolist()
         self.speaker_combo['values'] = speakers
         
@@ -377,6 +764,39 @@ class DiarisationReviewTool:
             self.speaker_var.set(speakers[0])
             self.on_speaker_change()
         
+        self.update_statistics()
+
+    def on_segmentation_model_change(self, event=None):
+        """Handle segmentation model selection change."""
+        self.current_segmentation_model = self.segmentation_model_var.get()
+
+        if self.df is None:
+            return
+
+        # Rebuild diarisation choices from segmentation-only filtering.
+        # Do not apply current diarisation filter here, otherwise the dropdown can get stuck.
+        model_df = self.df
+        segmentation_column = self.get_segmentation_column()
+        if segmentation_column and self.current_segmentation_model:
+            model_df = model_df[model_df[segmentation_column] == self.current_segmentation_model]
+
+        diarisation_models = model_df['diarisation_model'].dropna().unique().tolist()
+        self.model_combo['values'] = diarisation_models
+
+        if diarisation_models:
+            if self.current_model not in diarisation_models:
+                self.model_var.set(diarisation_models[0])
+                self.current_model = diarisation_models[0]
+            self.on_model_change()
+        else:
+            self.current_model = None
+            self.model_var.set("")
+            self.speaker_combo['values'] = []
+            self.speaker_var.set("")
+            self.current_speaker = None
+            self.current_idx = 0
+            self.update_display()
+
         self.update_statistics()
     
     def on_speaker_change(self, event=None):
@@ -390,10 +810,14 @@ class DiarisationReviewTool:
         if self.df is None or self.current_model is None or self.current_speaker is None:
             return
         
-        # Get segments for current model and speaker
-        speaker_df = self.df[
-            (self.df['diarisation_model'] == self.current_model) &
-            (self.df['speaker_id'] == self.current_speaker)
+        # Get segments for current model, speaker, and segmentation model
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
         ]
         
         if len(speaker_df) == 0:
@@ -401,17 +825,26 @@ class DiarisationReviewTool:
         
         # Get current segment
         segment = speaker_df.iloc[self.current_idx]
+
+        if self.trim_start_var is not None and self.trim_end_var is not None:
+            self.trim_start_var.set("0")
+            self.trim_end_var.set(str(int(segment['duration_ms'])))
         
         # Update progress
         self.progress_label.config(text=f"{self.current_idx + 1} / {len(speaker_df)}")
         
         # Update info
+        self.info_text.configure(state=tk.NORMAL)
         self.info_text.delete(1.0, tk.END)
+        segmentation_column = self.get_segmentation_column()
+        segmentation_value = segment.get(segmentation_column, "N/A") if segmentation_column else "N/A"
         info = f"""Filename: {segment['segment_filename']}
 Time: {segment['start_time_ms']}ms - {segment['end_time_ms']}ms | Duration: {segment['duration_ms']}ms
+    Segmentation model: {segmentation_value}
 Speaker: {segment['speaker_id']} | Confidence: {segment['confidence']:.3f}
 Model: {segment['diarisation_model']}"""
         self.info_text.insert(1.0, info)
+        self.info_text.configure(state=tk.DISABLED)
         
         # Load and display waveform
         try:
@@ -451,12 +884,16 @@ Model: {segment['diarisation_model']}"""
         if self.df is None or self.current_model is None:
             return
         
-        model_df = self.df[self.df['diarisation_model'] == self.current_model]
+        model_df = self.get_filtered_df()
+        if model_df is None:
+            return
+        model_df = model_df[model_df['diarisation_model'] == self.current_model]
         
         # Speaker distribution
         speaker_counts = model_df['speaker_id'].value_counts()
         
         stats = f"""Model: {self.current_model}
+Segmentation model: {self.current_segmentation_model}
 Total segments: {len(model_df)}
 Speaker distribution:\n"""
         
@@ -465,8 +902,10 @@ Speaker distribution:\n"""
             avg_conf = model_df[model_df['speaker_id'] == speaker]['confidence'].mean()
             stats += f"  {speaker}: {count} segments ({pct:.1f}%) | Avg confidence: {avg_conf:.3f}\n"
         
+        self.stats_text.configure(state=tk.NORMAL)
         self.stats_text.delete(1.0, tk.END)
         self.stats_text.insert(1.0, stats)
+        self.stats_text.configure(state=tk.DISABLED)
     
     def prev_segment(self):
         """Go to previous segment"""
@@ -476,9 +915,13 @@ Speaker distribution:\n"""
     
     def next_segment(self):
         """Go to next segment"""
-        speaker_df = self.df[
-            (self.df['diarisation_model'] == self.current_model) &
-            (self.df['speaker_id'] == self.current_speaker)
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
         ]
         if self.current_idx < len(speaker_df) - 1:
             self.current_idx += 1
@@ -517,6 +960,114 @@ Speaker distribution:\n"""
             messagebox.showerror("Error", "pygame not installed. Install with: pip install pygame")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to play audio: {e}")
+
+    def delete_segment_file(self):
+        """Delete current segment row and remove audio file when it is unreferenced."""
+        if self.df is None or self.current_model is None or self.current_speaker is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
+        ]
+        if len(speaker_df) == 0:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        if self.current_idx >= len(speaker_df):
+            self.current_idx = len(speaker_df) - 1
+
+        segment = speaker_df.iloc[self.current_idx]
+        row_index = segment.name
+        segment_filename = str(segment['segment_filename'])
+        audio_rel = str(segment['audio_path'])
+        audio_path = self.resolve_audio_path(audio_rel)
+
+        if not messagebox.askyesno(
+            "Delete File",
+            f"Delete this segment from CSV and remove file if unreferenced?\n\n{audio_path}"
+        ):
+            return
+
+        try:
+            self.df = self.df.drop(index=row_index).reset_index(drop=True)
+            self.df.to_csv(RESULTS_FILE, index=False)
+
+            remaining_refs = 0
+            if len(self.df) > 0:
+                remaining_refs = (self.df['audio_path'].astype(str) == audio_rel).sum()
+
+            if remaining_refs == 0 and audio_path.exists():
+                audio_path.unlink()
+
+            self.corrections.append({
+                'model_name': self.current_model,
+                'segment_filename': segment_filename,
+                'old_segment_filename': segment_filename,
+                'new_segment_filename': None,
+                'old_audio_path': audio_rel,
+                'new_audio_path': None,
+                'label': 'delete',
+                'timestamp': datetime.now().isoformat()
+            })
+
+            self.current_audio = None
+            self.current_sr = None
+
+            seg_df = self.df
+            segmentation_column = self.get_segmentation_column()
+            if segmentation_column and self.current_segmentation_model:
+                seg_df = seg_df[seg_df[segmentation_column] == self.current_segmentation_model]
+
+            models = seg_df['diarisation_model'].unique().tolist()
+            self.model_combo['values'] = models
+
+            if not models:
+                self.current_model = None
+                self.current_speaker = None
+                self.progress_label.config(text="0 / 0")
+                self.info_text.configure(state=tk.NORMAL)
+                self.info_text.delete(1.0, tk.END)
+                self.info_text.configure(state=tk.DISABLED)
+                self.stats_text.configure(state=tk.NORMAL)
+                self.stats_text.delete(1.0, tk.END)
+                self.stats_text.configure(state=tk.DISABLED)
+                self.ax.clear()
+                self.ax.text(0.5, 0.5, 'No segments remaining', ha='center', va='center', transform=self.ax.transAxes)
+                self.canvas.draw()
+                messagebox.showinfo("Success", "Segment deleted. No segments remain.")
+                return
+
+            if self.current_model not in models:
+                self.current_model = models[0]
+            self.model_var.set(self.current_model)
+
+            model_df = seg_df[seg_df['diarisation_model'] == self.current_model]
+            speakers = model_df['speaker_id'].unique().tolist()
+            self.speaker_combo['values'] = speakers
+
+            if self.current_speaker not in speakers:
+                self.current_speaker = speakers[0]
+            self.speaker_var.set(self.current_speaker)
+
+            speaker_after = model_df[model_df['speaker_id'] == self.current_speaker]
+            if len(speaker_after) > 0:
+                self.current_idx = min(self.current_idx, len(speaker_after) - 1)
+            else:
+                self.current_idx = 0
+
+            self.update_display()
+            self.update_statistics()
+            messagebox.showinfo("Success", "Segment deleted and CSV updated")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete segment: {e}")
     
     def reassign_speaker(self):
         """Reassign current segment to new speaker and persist to CSV/files."""
@@ -525,9 +1076,14 @@ Speaker distribution:\n"""
             messagebox.showwarning("Warning", "Enter new speaker ID")
             return
         
-        speaker_df = self.df[
-            (self.df['diarisation_model'] == self.current_model) &
-            (self.df['speaker_id'] == self.current_speaker)
+        speaker_df = self.get_filtered_df()
+        if speaker_df is None:
+            messagebox.showwarning("Warning", "No segment selected")
+            return
+
+        speaker_df = speaker_df[
+            (speaker_df['diarisation_model'] == self.current_model) &
+            (speaker_df['speaker_id'] == self.current_speaker)
         ]
         if len(speaker_df) == 0:
             messagebox.showwarning("Warning", "No segment selected")
@@ -576,7 +1132,9 @@ Speaker distribution:\n"""
             messagebox.showerror("Error", f"Failed to reassign speaker: {e}")
             return
         
+        segmentation_column = self.get_segmentation_column()
         correction = {
+            'segmentation_model': segment.get(segmentation_column, None) if segmentation_column else None,
             'model_name': self.current_model,
             'segment_filename': segment['segment_filename'],
             'old_speaker': old_speaker,
@@ -589,19 +1147,47 @@ Speaker distribution:\n"""
         
         self.corrections.append(correction)
 
-        # Refresh speaker buckets and stay near the updated row.
-        self.on_model_change()
-        self.current_speaker = new_speaker
-        self.speaker_var.set(new_speaker)
-        self.on_speaker_change()
+        # Refresh while keeping reviewer context on the original speaker timeline.
+        anchor_start_ms = int(segment['start_time_ms'])
+        previous_speaker = old_speaker
 
-        updated_df = self.df[
-            (self.df['diarisation_model'] == self.current_model) &
-            (self.df['speaker_id'] == new_speaker)
-        ]
-        if row_index in updated_df.index:
-            self.current_idx = list(updated_df.index).index(row_index)
-            self.update_display()
+        self.on_model_change()
+
+        available_speakers = list(self.speaker_combo['values'])
+        if previous_speaker in available_speakers:
+            self.current_speaker = previous_speaker
+            self.speaker_var.set(previous_speaker)
+        elif available_speakers:
+            self.current_speaker = available_speakers[0]
+            self.speaker_var.set(self.current_speaker)
+        else:
+            self.current_speaker = None
+            self.speaker_var.set("")
+
+        if self.current_speaker is not None:
+            speaker_after = self.get_filtered_df()
+            if speaker_after is not None:
+                speaker_after = speaker_after[
+                    (speaker_after['diarisation_model'] == self.current_model) &
+                    (speaker_after['speaker_id'] == self.current_speaker)
+                ]
+
+                if len(speaker_after) > 0:
+                    ordered = speaker_after.sort_values(['start_time_ms', 'end_time_ms'])
+                    next_rows = ordered[ordered['start_time_ms'] > anchor_start_ms]
+                    if len(next_rows) > 0:
+                        target_row = next_rows.index[0]
+                    else:
+                        target_row = ordered.index[-1]
+                    self.current_idx = speaker_after.index.get_loc(target_row)
+                else:
+                    self.current_idx = 0
+            else:
+                self.current_idx = 0
+        else:
+            self.current_idx = 0
+
+        self.update_display()
 
         messagebox.showinfo("Reassigned", f"Segment reassigned: {old_speaker} → {new_speaker}")
     
@@ -639,6 +1225,7 @@ Speaker distribution:\n"""
             f.write("DIARISATION REVIEW REPORT\n")
             f.write("=" * 80 + "\n\n")
             f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            segmentation_column = self.get_segmentation_column()
             
             for model in self.df['diarisation_model'].unique():
                 model_df = self.df[self.df['diarisation_model'] == model]
@@ -646,6 +1233,11 @@ Speaker distribution:\n"""
                 f.write(f"\nModel: {model}\n")
                 f.write("-" * 80 + "\n")
                 f.write(f"Total segments: {len(model_df)}\n\n")
+                if segmentation_column and segmentation_column in model_df.columns:
+                    f.write("Segmentation models:\n")
+                    for seg_model, seg_count in model_df[segmentation_column].value_counts().items():
+                        f.write(f"  {seg_model}: {seg_count}\n")
+                    f.write("\n")
                 
                 f.write("Speaker Distribution:\n")
                 speaker_counts = model_df['speaker_id'].value_counts()
@@ -661,7 +1253,12 @@ Speaker distribution:\n"""
                 
                 for corr in self.corrections:
                     f.write(f"Segment: {corr['segment_filename']}\n")
-                    f.write(f"  {corr['old_speaker']} → {corr['new_speaker']}\n")
+                    old_speaker = corr.get('old_speaker')
+                    new_speaker = corr.get('new_speaker')
+                    if old_speaker is not None and new_speaker is not None:
+                        f.write(f"  {old_speaker} → {new_speaker}\n")
+                    else:
+                        f.write(f"  Label: {corr.get('label', 'update')}\n")
                     f.write(f"  Time: {corr['timestamp']}\n\n")
         
         messagebox.showinfo("Success", f"Report saved to:\n{output_file}")
