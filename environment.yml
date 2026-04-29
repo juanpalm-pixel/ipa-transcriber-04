@@ -38,6 +38,7 @@ dependencies:
     - praat-parselmouth>=0.4.3
     - webrtcvad-wheels>=2.0.11.post1
     - silero-vad>=4.0.0
+    - allosaurus>=1.0.0
     
     # Additional models
     - openai-whisper>=20230314

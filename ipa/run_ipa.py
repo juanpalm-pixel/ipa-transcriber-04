@@ -20,9 +20,11 @@ from datetime import datetime
 import json
 
 # Configuration
-DIARISATION_RESULTS = Path("../diarisation/diarisation_results.csv")
-OUTPUT_DIR = Path("output")
-MODELS_DIR = Path("models")
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
+DIARISATION_RESULTS = PROJECT_ROOT / "diarisation" / "diarisation_results.csv"
+OUTPUT_DIR = PROJECT_ROOT / "diarisation" / "output"
+MODELS_DIR = PROJECT_ROOT / "models"
 RESULTS_FILE = "ipa_transcriptions.csv"
 
 # Create directories
@@ -320,7 +322,10 @@ def main():
         results_for_model = []
         
         for idx, row in tqdm(diar_df_filtered.iterrows(), total=len(diar_df_filtered), desc=model.name):
+            # Resolve audio path relative to project root
             audio_path = Path(row['audio_path'])
+            if not audio_path.is_absolute():
+                audio_path = PROJECT_ROOT / audio_path
             
             if not audio_path.exists():
                 print(f"  WARNING: File not found: {audio_path}")
