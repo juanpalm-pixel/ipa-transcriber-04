@@ -6,6 +6,7 @@ Tests multiple models for IPA transcription of segmented audio.
 import os
 import sys
 import warnings
+import subprocess
 warnings.filterwarnings('ignore')
 
 import torch
@@ -120,9 +121,24 @@ class AllosaurusTranscriber:
             print(f"✓ Loaded {self.name} (CPU mode)")
             return True
             
+        except ModuleNotFoundError:
+            print(f"{self.name} not found in the active environment. Installing it now...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "allosaurus"])
+                from allosaurus.app import read_recognizer
+
+                print(f"Loading {self.name}...")
+                self.model = read_recognizer()
+
+                print(f"✓ Loaded {self.name} (CPU mode)")
+                return True
+
+            except Exception as e:
+                print(f"✗ Failed to load {self.name}: {e}")
+                print("  Add allosaurus to the active conda env via environment.yml or install it manually.")
+                return False
         except Exception as e:
             print(f"✗ Failed to load {self.name}: {e}")
-            print("  Install with: pip install allosaurus")
             return False
     
     def transcribe(self, audio_path):

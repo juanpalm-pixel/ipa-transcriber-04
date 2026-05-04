@@ -1,0 +1,14 @@
+{
+  "prev_segment": "Left",
+  "next_segment": "Right",
+  "play_audio": "space",
+  "delete_file": "q",
+  "focus_trim_start": "e",
+  "focus_trim_end": "r",
+  "trim_and_save": "t",
+  "extract_new_segment": "y",
+  "female": "z",
+  "male": "x",
+  "male_1": "c",
+  "male_2": "v"
+}
