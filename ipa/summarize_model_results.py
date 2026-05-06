@@ -105,7 +105,8 @@ def summarize_file(path: Path):
     wer_list = []
     norm_lev_list = []
     exact_flags = []
-    length_ratios = []
+    ref_len_list = []
+    hyp_len_list = []
 
     for r, h in zip(refs, hyps):
         lev = levenshtein(r, h)
@@ -125,7 +126,12 @@ def summarize_file(path: Path):
 
         exact_flags.append(1 if r.strip() == h.strip() else 0)
 
-        length_ratios.append((len(h) / max(len(r), 1)))
+        ref_len_list.append(len(r))
+        hyp_len_list.append(len(h))
+
+    ref_len_mean = float(np.mean(ref_len_list)) if ref_len_list else 0.0
+    hyp_len_mean = float(np.mean(hyp_len_list)) if hyp_len_list else 0.0
+    length_ratio_mean = (hyp_len_mean / ref_len_mean) if ref_len_mean > 0 else 0.0
 
     res = {
         "ipa_model": path.stem,
@@ -135,7 +141,9 @@ def summarize_file(path: Path):
         "norm_lev_mean": float(np.mean(norm_lev_list)) if norm_lev_list else 0.0,
         # exact_match_rate as decimal fraction (0..1), not percentage
         "exact_match_rate": float(np.mean(exact_flags)) if exact_flags else 0.0,
-        "length_ratio_mean": float(np.mean(length_ratios)) if length_ratios else 0.0,
+        "ref_len_mean": ref_len_mean,
+        "hyp_len_mean": hyp_len_mean,
+        "length_ratio_mean": length_ratio_mean,
         "rows_all": n,
         "rows_mat": int(sum(exact_flags)),
         "rows_unm": int(n - sum(exact_flags)),
@@ -174,7 +182,8 @@ def main():
     df = pd.DataFrame(rows)
     col_order = [
         "ipa_model", "rows_total", "cer_mean", "wer_mean", "norm_lev_mean",
-        "exact_match_rate", "length_ratio_mean", "rows_all", "rows_mat", "rows_unm"
+        "exact_match_rate", "ref_len_mean", "hyp_len_mean", "length_ratio_mean", 
+        "rows_all", "rows_mat", "rows_unm"
     ]
     # ensure all columns exist
     for c in col_order:
@@ -183,7 +192,8 @@ def main():
     df = df[col_order]
 
     # Round numeric columns to 6 decimal places (decimal fractions, not percentages)
-    float_cols = ["cer_mean", "wer_mean", "norm_lev_mean", "exact_match_rate", "length_ratio_mean"]
+    float_cols = ["cer_mean", "wer_mean", "norm_lev_mean", "exact_match_rate", 
+                  "ref_len_mean", "hyp_len_mean", "length_ratio_mean"]
     for c in float_cols:
         if c in df.columns:
             df[c] = df[c].astype(float).round(6)
