@@ -18,9 +18,11 @@ from datetime import datetime
 import json
 
 # Configuration
-IPA_RESULTS = Path("../ipa/ipa_transcriptions.csv")
-OUTPUT_DIR = Path("output")
-RESULTS_FILE = "tone_analysis.csv"
+BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR / "tone-correction"
+IPA_RESULTS = BASE_DIR / "ipa" / "output" / "ipa_transcriptions.csv"
+OUTPUT_DIR = PROJECT_ROOT / "output"
+RESULTS_FILE = OUTPUT_DIR / "tone_analysis.csv"
 
 OUTPUT_DIR.mkdir(exist_ok=True)
 
