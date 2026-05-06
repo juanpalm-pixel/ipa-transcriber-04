@@ -102,3 +102,4 @@ diarisation/diarisation_results.csv
 # Input files (exclude to save space, but track .gitkeep)
 input/**/*
 !input/.gitkeep
+zz_past-results/**/*

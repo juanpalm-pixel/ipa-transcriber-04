@@ -19,24 +19,25 @@ from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
 import json
+from transformers import Wav2Vec2ForCTC, AutoProcessor
 
-# Configuration
+# Configuration: project paths and output locations used by this stage.
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
-DIARISATION_RESULTS = PROJECT_ROOT / "diarisation" / "diarisation_results.csv"
-OUTPUT_DIR = PROJECT_ROOT / "diarisation" / "output"
+EXTRACTED_SEGMENTS_DIR = PROJECT_ROOT / "segmentation" / "output" / "simple-vad" 
+OUTPUT_DIR = PROJECT_ROOT / "ipa" / "output"
 MODELS_DIR = PROJECT_ROOT / "models"
 RESULTS_FILE = "ipa_transcriptions.csv"
 
-# Create directories
+# Ensure required directories exist before any model/data operations.
 OUTPUT_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
-# Device configuration - CPU only
+# Device configuration: force CPU for reproducibility and low-resource runs.
 device = "cpu"
 print(f"Using device: {device} (CPU-only mode)")
 
-# HuggingFace token
+# Optional Hugging Face token for gated/private model access.
 HF_TOKEN = os.getenv('HF_TOKEN')
 if not HF_TOKEN:
     print("WARNING: HF_TOKEN not found in environment")
@@ -56,10 +57,10 @@ class WhisperIPATranscriber:
             from transformers import WhisperProcessor, WhisperForConditionalGeneration
             
             print(f"Loading {self.name}...")
-            self.processor = WhisperProcessor.from_pretrained(self.model_id, use_auth_token=HF_TOKEN)
+            self.processor = WhisperProcessor.from_pretrained(self.model_id, token=HF_TOKEN)
             self.model = WhisperForConditionalGeneration.from_pretrained(
                 self.model_id,
-                use_auth_token=HF_TOKEN
+                token=HF_TOKEN
             )
             self.model = self.model.to(device)
             self.model.eval()
@@ -122,21 +123,9 @@ class AllosaurusTranscriber:
             return True
             
         except ModuleNotFoundError:
-            print(f"{self.name} not found in the active environment. Installing it now...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "allosaurus"])
-                from allosaurus.app import read_recognizer
-
-                print(f"Loading {self.name}...")
-                self.model = read_recognizer()
-
-                print(f"✓ Loaded {self.name} (CPU mode)")
-                return True
-
-            except Exception as e:
-                print(f"✗ Failed to load {self.name}: {e}")
-                print("  Add allosaurus to the active conda env via environment.yml or install it manually.")
-                return False
+            print(f"✗ {self.name} is not installed in this environment; skipping this model.")
+            print("  Note: allosaurus installation may fail on Python 3.14 without build tools.")
+            return False
         except Exception as e:
             print(f"✗ Failed to load {self.name}: {e}")
             return False
@@ -174,10 +163,10 @@ class G2PTranscriber:
             from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
             
             print(f"Loading {self.name}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, use_auth_token=HF_TOKEN)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, token=HF_TOKEN)
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_id,
-                use_auth_token=HF_TOKEN
+                token=HF_TOKEN
             )
             self.model = self.model.to(device)
             self.model.eval()
@@ -221,7 +210,6 @@ class G2PTranscriber:
                 'confidence': 0.0
             }
 
-
 class SimpleWhisperIPATranscriber:
     """Simple IPA transcription using base Whisper"""
     
@@ -264,53 +252,57 @@ class SimpleWhisperIPATranscriber:
 
 
 def main():
-    """Run IPA transcription on all diarised segments"""
+    """Run IPA transcription on extracted audio segments."""
     
     print("=" * 80)
     print("IPA TRANSCRIPTION - Testing Multiple Models (CPU Mode)")
     print("=" * 80)
     print()
     
-    # Load diarisation results
-    if not DIARISATION_RESULTS.exists():
-        print(f"ERROR: Diarisation results not found: {DIARISATION_RESULTS}")
-        print("Please run diarisation first!")
+    # Step 1: Validate that extracted audio segments exist.
+    if not EXTRACTED_SEGMENTS_DIR.exists():
+        print(f"ERROR: Extracted segments directory not found: {EXTRACTED_SEGMENTS_DIR}")
+        print("Please run extract_segments.py first!")
         return
     
-    diar_df = pd.read_csv(DIARISATION_RESULTS)
-    print(f"Loaded {len(diar_df)} diarised segments")
+    # Step 2: Enumerate all WAV files to be transcribed.
+    audio_files = sorted(list(EXTRACTED_SEGMENTS_DIR.glob("*.wav")))
+    
+    if not audio_files:
+        print(f"ERROR: No WAV files found in {EXTRACTED_SEGMENTS_DIR}")
+        return
+    
+    print(f"Found {len(audio_files)} extracted segments")
     print()
     
-    # Select which diarisation model to use (use the first one for now)
-    selected_diar_model = diar_df['diarisation_model'].iloc[0]
-    print(f"Using diarisation from: {selected_diar_model}")
+    # Step 3: Build a uniform table so downstream code can stay model-agnostic.
+    # Time/speaker fields are placeholders for this extracted-segment workflow.
+    segment_data = []
+    for audio_path in audio_files:
+        segment_data.append({
+            'segment_filename': audio_path.name,
+            'audio_path': str(audio_path),
+            'start_time_ms': 0,  # Not applicable for extracted segments
+            'end_time_ms': 0,
+            'duration_ms': 0,
+            'speaker_id': 'N/A',
+            'diarisation_model': 'N/A'
+        })
     
-    diar_df_filtered = diar_df[diar_df['diarisation_model'] == selected_diar_model].copy()
+    diar_df_filtered = pd.DataFrame(segment_data)
     print(f"Processing {len(diar_df_filtered)} segments")
-    print()
     
-    # Initialize IPA transcription models
-    # Start with fastest/most reliable models for CPU
+    # Step 4: Choose which transcription models to run.
+    # Keep this list small on CPU to control total runtime.
     models = [
-        SimpleWhisperIPATranscriber("tiny"),  # Fastest Whisper
-        AllosaurusTranscriber(),  # Fast and IPA-specific
+        # SimpleWhisperIPATranscriber("tiny"),  # Fastest Whisper
+         AllosaurusTranscriber(),  # Fast and IPA-specific
+         WhisperIPATranscriber("neurlang/ipa-whisper-small"),
+         G2PTranscriber(), 
     ]
     
-    # Add more models if desired (commented out for speed)
-    # Uncomment to test more models (will take longer on CPU)
-    """
-    try:
-        models.append(WhisperIPATranscriber("neurlang/ipa-whisper-small"))
-    except:
-        print("Note: neurlang/ipa-whisper-small not available")
-    
-    try:
-        models.append(G2PTranscriber())
-    except:
-        print("Note: G2P model not available")
-    """
-    
-    # Load models
+   
+    # Step 5: Load selected models and keep only the ones that initialize successfully.
     print("Loading models...")
     loaded_models = []
     for model in models:
@@ -321,11 +313,9 @@ def main():
     if not loaded_models:
         print("ERROR: No models loaded successfully")
         print("Make sure required packages are installed:")
-        print("  pip install openai-whisper")
-        print("  pip install allosaurus")
         return
     
-    # Run transcription
+    # Step 6: Run transcription model-by-model over every extracted segment.
     all_results = []
     
     for model in loaded_models:
@@ -338,7 +328,7 @@ def main():
         results_for_model = []
         
         for idx, row in tqdm(diar_df_filtered.iterrows(), total=len(diar_df_filtered), desc=model.name):
-            # Resolve audio path relative to project root
+            # Resolve relative paths safely to absolute paths.
             audio_path = Path(row['audio_path'])
             if not audio_path.is_absolute():
                 audio_path = PROJECT_ROOT / audio_path
@@ -347,10 +337,10 @@ def main():
                 print(f"  WARNING: File not found: {audio_path}")
                 continue
             
-            # Run transcription
+            # Run the model-specific transcription routine on this segment.
             result = model.transcribe(audio_path)
             
-            # Combine with segment info
+            # Merge source segment metadata with model output for analysis/comparison.
             combined = {
                 'segment_filename': row['segment_filename'],
                 'start_time_ms': row['start_time_ms'],
@@ -369,13 +359,13 @@ def main():
         end_time = datetime.now()
         processing_time = (end_time - start_time).total_seconds()
         
-        # Add processing time to all results
+        # Attach end-to-end runtime for this model to each produced row.
         for r in results_for_model:
             r['processing_time_s'] = processing_time
         
         all_results.extend(results_for_model)
         
-        # Print summary
+        # Print quick quality/coverage summary for this model.
         if results_for_model:
             df_temp = pd.DataFrame(results_for_model)
             non_empty = len(df_temp[df_temp['ipa_transcription'].str.len() > 0])
@@ -387,14 +377,15 @@ def main():
             for i, row in df_temp.head(3).iterrows():
                 print(f"    {row['segment_filename']}: {row['ipa_transcription'][:50]}...")
     
-    # Save results
+    # Step 7: Save all collected transcriptions to CSV and print final metrics.
     if all_results:
         df = pd.DataFrame(all_results)
         df = df.sort_values(['ipa_model', 'start_time_ms'])
-        df.to_csv(RESULTS_FILE, index=False)
+        results_path = OUTPUT_DIR / RESULTS_FILE
+        df.to_csv(results_path, index=False)
         
         print(f"\n{'=' * 80}")
-        print(f"✓ Results saved to {RESULTS_FILE}")
+        print(f"✓ Results saved to {results_path}")
         print(f"  Total transcriptions: {len(all_results)}")
         
         # Overall summary

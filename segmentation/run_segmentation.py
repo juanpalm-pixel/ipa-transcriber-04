@@ -26,7 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-INPUT_DIR = PROJECT_ROOT / "input"
+INPUT_DIR = PROJECT_ROOT / "output" / "extracted_segments"
 OUTPUT_DIR = SCRIPT_DIR / "output"
 MODELS_DIR = SCRIPT_DIR / "models"
 RESULTS_FILE = SCRIPT_DIR / "segmentation_results.csv"
@@ -38,7 +38,7 @@ MODEL_SEGMENT_KWARGS = {
         "min_silence_duration_ms": 280,
         "min_speech_duration_ms": 300,
     },
-    "whisper-base-cancel": {
+    "whisper-base": {
         "threshold": 0.7, # Higher => more strict (default is 0.6 for no_speech_threshold in Whisper)
         "min_speech_duration_ms": 300,
         "min_silence_duration_ms": 300,
@@ -113,19 +113,19 @@ class SileroVADSegmenter:
             )
             
             # Convert to results format
+            input_name = Path(audio_path).stem
             segments = []
             for i, ts in enumerate(speech_timestamps):
                 start_sample = ts['start']
                 end_sample = ts['end']
                 start_ms = int((start_sample / 16000) * 1000)
                 end_ms = int((end_sample / 16000) * 1000)
-                duration_ms = end_ms - start_ms
                 
                 # Extract segment
                 segment_wav = wav[start_sample:end_sample]
                 
                 # Save segment
-                filename = f"{start_ms}_{end_ms}.wav"
+                filename = f"{input_name}_{i+1}.wav"
                 output_path = OUTPUT_DIR / self.name / filename
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
@@ -190,6 +190,7 @@ class WhisperSegmenter:
             
             # Load audio for extraction
             wav, sr = librosa.load(audio_path, sr=16000, mono=True)
+            input_name = Path(audio_path).stem
             
             segments = []
             current_words = []
@@ -215,7 +216,7 @@ class WhisperSegmenter:
                 end_sample = int((current_end_ms / 1000) * sr)
                 segment_wav = wav[start_sample:end_sample]
 
-                filename = f"{current_start_ms}_{current_end_ms}.wav"
+                filename = f"{input_name}_{len(segments)+1}.wav"
                 output_path = OUTPUT_DIR / self.name / filename
                 output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -335,8 +336,9 @@ class SimpleVADSegmenter:
             
             segments = []
             min_segment_samples = int(min_segment_duration * sr)
+            input_name = Path(audio_path).stem
             
-            for start_sample, end_sample in zip(starts, ends):
+            for idx, (start_sample, end_sample) in enumerate(zip(starts, ends), 1):
                 # Check minimum duration
                 if end_sample - start_sample < min_segment_samples:
                     continue
@@ -349,7 +351,7 @@ class SimpleVADSegmenter:
                 segment_wav = wav[start_sample:end_sample]
                 
                 # Save segment
-                filename = f"{start_ms}_{end_ms}.wav"
+                filename = f"{input_name}_{idx}.wav"
                 output_path = OUTPUT_DIR / self.name / filename
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
@@ -379,27 +381,19 @@ def main():
     print("=" * 80)
     print()
     
-    # Find input audio
-    input_files = list(INPUT_DIR.glob("*.wav"))
+    # Find input audio files
+    input_files = sorted(INPUT_DIR.glob("*.wav"))
     if not input_files:
         print(f"ERROR: No .wav files found in {INPUT_DIR}")
         return
     
-    audio_file = input_files[0]
-    print(f"Input audio: {audio_file}")
-    print()
-    
-    # Get audio info
-    info = sf.info(audio_file)
-    print(f"Sample rate: {info.samplerate} Hz")
-    print(f"Duration: {info.duration:.2f} seconds")
-    print(f"Channels: {info.channels}")
+    print(f"Found {len(input_files)} input file(s)")
     print()
     
     # Initialize models
     models = [
-        SileroVADSegmenter(),
-        WhisperSegmenter("base"),
+        # SileroVADSegmenter(),
+        # WhisperSegmenter("base"),
         SimpleVADSegmenter()
     ]
 
@@ -415,39 +409,49 @@ def main():
         print("ERROR: No models loaded successfully")
         return
     
-    # Run segmentation with each model
+    # Run segmentation with each model on all files
     all_results = []
     
-    for model in loaded_models:
+    for audio_file in input_files:
         print(f"\n{'=' * 80}")
-        print(f"Running {model.name}...")
+        print(f"Processing: {audio_file.name}")
         print('=' * 80)
         
-        start_time = datetime.now()
-        segment_kwargs = MODEL_SEGMENT_KWARGS.get(model.name)
-        if segment_kwargs is None:
-            print(f"ERROR: No segmentation config found for model '{model.name}'")
-            continue
-        segments = model.segment(audio_file, **segment_kwargs)
-        end_time = datetime.now()
+        # Get audio info
+        info = sf.info(audio_file)
+        print(f"Sample rate: {info.samplerate} Hz")
+        print(f"Duration: {info.duration:.2f} seconds")
+        print(f"Channels: {info.channels}")
+        print()
         
-        processing_time = (end_time - start_time).total_seconds()
-        
-        print(f"✓ Found {len(segments)} segments")
-        print(f"  Processing time: {processing_time:.2f} seconds")
-        
-        if segments:
-            durations = [s['duration_ms'] for s in segments]
-            print(f"  Average segment duration: {np.mean(durations):.0f} ms")
-            print(f"  Min duration: {np.min(durations):.0f} ms")
-            print(f"  Max duration: {np.max(durations):.0f} ms")
+        for model in loaded_models:
+            print(f"Running {model.name}...")
             
-            # Add metadata
-            for seg in segments:
-                seg['processing_time_s'] = processing_time
-                seg['input_file'] = audio_file.name
-        
-        all_results.extend(segments)
+            start_time = datetime.now()
+            segment_kwargs = MODEL_SEGMENT_KWARGS.get(model.name)
+            if segment_kwargs is None:
+                print(f"ERROR: No segmentation config found for model '{model.name}'")
+                continue
+            segments = model.segment(audio_file, **segment_kwargs)
+            end_time = datetime.now()
+            
+            processing_time = (end_time - start_time).total_seconds()
+            
+            print(f"  ✓ Found {len(segments)} segments")
+            print(f"    Processing time: {processing_time:.2f} seconds")
+            
+            if segments:
+                durations = [s['duration_ms'] for s in segments]
+                print(f"    Average segment duration: {np.mean(durations):.0f} ms")
+                print(f"    Min duration: {np.min(durations):.0f} ms")
+                print(f"    Max duration: {np.max(durations):.0f} ms")
+                
+                # Add metadata
+                for seg in segments:
+                    seg['processing_time_s'] = processing_time
+                    seg['input_file'] = audio_file.name
+            
+            all_results.extend(segments)
     
     # Save results
     if all_results:
