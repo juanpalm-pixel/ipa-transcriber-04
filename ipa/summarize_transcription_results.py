@@ -26,6 +26,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+def normalize_ipa(x):
+    import math
+    if x is None:
+        return ""
+    if isinstance(x, float) and math.isnan(x):
+        return ""
+    s = str(x)
+    return " ".join(s.split())
 
 def levenshtein(a: str, b: str) -> int:
     """Compute Levenshtein distance with iterative dynamic programming."""
@@ -113,7 +121,7 @@ def summarize_file(path: Path) -> pd.DataFrame:
     work = df[["segment_filename", "ipa_model", "ipa_transcription"]].copy()
     work["segment_filename"] = work["segment_filename"].map(normalize_text)
     work["ipa_model"] = work["ipa_model"].map(normalize_text)
-    work["ipa_transcription"] = work["ipa_transcription"].map(normalize_text)
+    work["ipa_transcription"] = work["ipa_transcription"].fillna("").astype(str).map(normalize_ipa)
     work["target_text"] = work["segment_filename"].map(extract_target_from_segment_filename)
 
     rows = []
