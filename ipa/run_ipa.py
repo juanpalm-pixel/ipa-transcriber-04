@@ -389,7 +389,7 @@ def main():
         print(f"  Total transcriptions: {len(all_results)}")
         
         # Overall summary
-        print("\nTranscription Success Rate by Model:")
+        print("\nNumber of Non-Empty Transcriptions by Model:")
         for model in df['ipa_model'].unique():
             model_df = df[df['ipa_model'] == model]
             non_empty = len(model_df[model_df['ipa_transcription'].str.len() > 0])
@@ -401,8 +401,6 @@ def main():
     print("\n" + "=" * 80)
     print("IPA TRANSCRIPTION COMPLETE")
     print("=" * 80)
-    print("\nNOTE: For CPU-only mode, we tested the fastest models.")
-    print("To test more models, uncomment additional models in the code.")
 
 
 if __name__ == "__main__":

@@ -225,7 +225,7 @@ def save_markdown_table(cells, out_prefix, kind, row_title, row_order, col_order
 
 def main():
     target_path = os.path.join(ROOT, "input", "MGM_AFA4_2nd.txt")
-    model_01_path = os.path.join(IPA_OUT, "previously-run", "01b_ipa_transcriptions.csv")
+    model_01_path = os.path.join(IPA_OUT, "previously-run", "01_ipa_transcriptions.csv")
     model_02_path = os.path.join(IPA_OUT, "previously-run", "02_ipa_transcriptions.csv")
 
     source_texts = {

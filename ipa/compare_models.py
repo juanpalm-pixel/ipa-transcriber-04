@@ -2,6 +2,9 @@
 Compare IPA transcription results across models
 """
 
+from __future__ import annotations
+
+import math
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -9,14 +12,29 @@ from collections import defaultdict
 import difflib
 
 # Configuration
-RESULTS_FILE = "ipa_transcriptions.csv"
-REPORT_DIR = Path("../verification_3/reports")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BASE_DIR = PROJECT_ROOT / "ipa"
+
+RESULTS_FILE = BASE_DIR / "output" / "ipa_transcriptions.csv"
+REPORT_DIR = BASE_DIR / "output" / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def safe_text(value: object) -> str:
+    """Convert missing values to an empty string before string operations."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    return str(value)
 
 def load_results():
     """Load IPA transcription results"""
     try:
         df = pd.read_csv(RESULTS_FILE)
+        for column in ["segment_filename", "speaker_id", "ipa_model", "ipa_transcription"]:
+            if column in df.columns:
+                df[column] = df[column].map(safe_text)
         print(f"Loaded {len(df)} IPA transcriptions")
         return df
     except FileNotFoundError:
@@ -47,7 +65,7 @@ def calculate_agreement(df):
         # Get transcriptions from each model
         transcriptions = {}
         for _, row in segment_df.iterrows():
-            transcriptions[row['ipa_model']] = row['ipa_transcription']
+            transcriptions[row['ipa_model']] = safe_text(row['ipa_transcription'])
         
         # Compare all pairs
         model_list = list(transcriptions.keys())
@@ -84,8 +102,9 @@ def analyze_by_speaker(df):
         print(f"\n{speaker}:")
         for model in speaker_df['ipa_model'].unique():
             model_df = speaker_df[speaker_df['ipa_model'] == model]
-            non_empty = len(model_df[model_df['ipa_transcription'].str.len() > 0])
-            avg_length = model_df['ipa_transcription'].str.len().mean()
+            transcription_lengths = model_df['ipa_transcription'].map(len)
+            non_empty = int((transcription_lengths > 0).sum())
+            avg_length = transcription_lengths.mean()
             
             print(f"  {model}:")
             print(f"    Segments: {len(model_df)}")
@@ -141,9 +160,10 @@ def generate_report(df):
     
     for model in df['ipa_model'].unique():
         model_df = df[df['ipa_model'] == model]
-        non_empty = len(model_df[model_df['ipa_transcription'].str.len() > 0])
+        transcription_lengths = model_df['ipa_transcription'].map(len)
+        non_empty = int((transcription_lengths > 0).sum())
         success_rate = (non_empty / len(model_df)) * 100
-        avg_length = model_df['ipa_transcription'].str.len().mean()
+        avg_length = transcription_lengths.mean()
         proc_time = model_df['processing_time_s'].iloc[0]
         
         html += f"""
@@ -176,10 +196,10 @@ def generate_report(df):
     for _, row in df.head(20).iterrows():
         html += f"""
                 <tr>
-                    <td>{row['segment_filename']}</td>
-                    <td>{row['speaker_id']}</td>
-                    <td>{row['ipa_model']}</td>
-                    <td class="ipa">{row['ipa_transcription']}</td>
+                    <td>{safe_text(row['segment_filename'])}</td>
+                    <td>{safe_text(row['speaker_id'])}</td>
+                    <td>{safe_text(row['ipa_model'])}</td>
+                    <td class="ipa">{safe_text(row['ipa_transcription'])}</td>
                 </tr>
         """
     
@@ -212,11 +232,12 @@ def main():
     print("\nModel Statistics:")
     for model in df['ipa_model'].unique():
         model_df = df[df['ipa_model'] == model]
-        non_empty = len(model_df[model_df['ipa_transcription'].str.len() > 0])
+        transcription_lengths = model_df['ipa_transcription'].map(len)
+        non_empty = int((transcription_lengths > 0).sum())
         print(f"\n{model}:")
         print(f"  Segments: {len(model_df)}")
         print(f"  Non-empty transcriptions: {non_empty} ({(non_empty/len(model_df)*100):.1f}%)")
-        print(f"  Average transcription length: {model_df['ipa_transcription'].str.len().mean():.1f} chars")
+        print(f"  Average transcription length: {transcription_lengths.mean():.1f} chars")
         print(f"  Processing time: {model_df['processing_time_s'].iloc[0]:.2f}s")
     
     # Analyze agreement
