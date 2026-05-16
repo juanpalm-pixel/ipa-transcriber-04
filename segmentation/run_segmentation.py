@@ -26,7 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-INPUT_DIR = PROJECT_ROOT / "output" / "extracted_segments"
+INPUT_DIR = PROJECT_ROOT / "output" /"extracted_segments"
 OUTPUT_DIR = SCRIPT_DIR / "output"
 MODELS_DIR = SCRIPT_DIR / "models"
 RESULTS_FILE = SCRIPT_DIR / "segmentation_results.csv"
@@ -118,8 +118,12 @@ class SileroVADSegmenter:
             for i, ts in enumerate(speech_timestamps):
                 start_sample = ts['start']
                 end_sample = ts['end']
-                start_ms = int((start_sample / 16000) * 1000)
-                end_ms = int((end_sample / 16000) * 1000)
+                start_ms = (start_sample / 16000) * 1000.0
+                end_ms = (end_sample / 16000) * 1000.0
+                duration_ms = end_ms - start_ms
+                start_time_s = start_ms / 1000.0
+                end_time_s = end_ms / 1000.0
+                duration_s = duration_ms / 1000.0
                 
                 # Extract segment
                 segment_wav = wav[start_sample:end_sample]
@@ -136,6 +140,9 @@ class SileroVADSegmenter:
                     'start_time_ms': start_ms,
                     'end_time_ms': end_ms,
                     'duration_ms': duration_ms,
+                    'start_time_s': start_time_s,
+                    'end_time_s': end_time_s,
+                    'duration_s': duration_s,
                     'model_name': self.name,
                     'full_path': str(output_path)
                 })
@@ -204,7 +211,6 @@ class WhisperSegmenter:
                     current_start_ms = None
                     current_end_ms = None
                     return None
-
                 duration_ms = current_end_ms - current_start_ms
                 if duration_ms < min_speech_duration_ms:
                     current_words = []
@@ -222,11 +228,18 @@ class WhisperSegmenter:
 
                 sf.write(output_path, segment_wav, 16000)
 
+                start_time_s = current_start_ms / 1000.0
+                end_time_s = current_end_ms / 1000.0
+                duration_s = duration_ms / 1000.0
+
                 segment_record = {
                     'filename': filename,
                     'start_time_ms': current_start_ms,
                     'end_time_ms': current_end_ms,
                     'duration_ms': duration_ms,
+                    'start_time_s': start_time_s,
+                    'end_time_s': end_time_s,
+                    'duration_s': duration_s,
                     'model_name': self.name,
                     'word_text': ' '.join(w.get('word', '').strip() for w in current_words).strip(),
                     'full_path': str(output_path)
@@ -243,8 +256,8 @@ class WhisperSegmenter:
                     for word_info in segment['words']:
                         start_s = word_info['start']
                         end_s = word_info['end']
-                        start_ms = int(start_s * 1000)
-                        end_ms = int(end_s * 1000)
+                        start_ms = start_s * 1000.0
+                        end_ms = end_s * 1000.0
                         if not current_words:
                             current_words = [word_info]
                             current_start_ms = start_ms
@@ -343,9 +356,12 @@ class SimpleVADSegmenter:
                 if end_sample - start_sample < min_segment_samples:
                     continue
                 
-                start_ms = int((start_sample / sr) * 1000)
-                end_ms = int((end_sample / sr) * 1000)
+                start_ms = (start_sample / sr) * 1000.0
+                end_ms = (end_sample / sr) * 1000.0
                 duration_ms = end_ms - start_ms
+                start_time_s = start_ms / 1000.0
+                end_time_s = end_ms / 1000.0
+                duration_s = duration_ms / 1000.0
                 
                 # Extract segment
                 segment_wav = wav[start_sample:end_sample]
@@ -362,6 +378,9 @@ class SimpleVADSegmenter:
                     'start_time_ms': start_ms,
                     'end_time_ms': end_ms,
                     'duration_ms': duration_ms,
+                    'start_time_s': start_time_s,
+                    'end_time_s': end_time_s,
+                    'duration_s': duration_s,
                     'model_name': self.name,
                     'full_path': str(output_path)
                 })
@@ -420,7 +439,7 @@ def main():
         # Get audio info
         info = sf.info(audio_file)
         print(f"Sample rate: {info.samplerate} Hz")
-        print(f"Duration: {info.duration:.2f} seconds")
+        print(f"Duration: {info.duration:.6f} seconds")
         print(f"Channels: {info.channels}")
         print()
         
@@ -436,9 +455,9 @@ def main():
             end_time = datetime.now()
             
             processing_time = (end_time - start_time).total_seconds()
-            
+
             print(f"  ✓ Found {len(segments)} segments")
-            print(f"    Processing time: {processing_time:.2f} seconds")
+            print(f"    Processing time: {processing_time:.6f} seconds")
             
             if segments:
                 durations = [s['duration_ms'] for s in segments]
@@ -456,8 +475,13 @@ def main():
     # Save results
     if all_results:
         df = pd.DataFrame(all_results)
-        df = df.sort_values(['model_name', 'start_time_ms'])
-        df.to_csv(RESULTS_FILE, index=False)
+        # Prefer sorting by seconds field if available (preserves fractional precision)
+        if 'start_time_s' in df.columns:
+            df = df.sort_values(['model_name', 'start_time_s'])
+        else:
+            df = df.sort_values(['model_name', 'start_time_ms'])
+        # Write floats with 6 decimal places
+        df.to_csv(RESULTS_FILE, index=False, float_format='%.6f')
         print(f"\n✓ Results saved to {RESULTS_FILE}")
         print(f"  Total segments across all models: {len(all_results)}")
         
@@ -467,7 +491,19 @@ def main():
             'filename': 'count',
             'duration_ms': ['mean', 'min', 'max'],
             'processing_time_s': 'first'
-        }).round(2)
+        })
+
+        # Round duration ms columns to 2 decimals, keep processing_time_s at 6 decimals
+        try:
+            summary[('duration_ms', 'mean')] = summary[('duration_ms', 'mean')].round(2)
+            summary[('duration_ms', 'min')] = summary[('duration_ms', 'min')].round(2)
+            summary[('duration_ms', 'max')] = summary[('duration_ms', 'max')].round(2)
+        except Exception:
+            pass
+
+        if 'processing_time_s' in summary.columns:
+            summary['processing_time_s'] = summary['processing_time_s'].round(6)
+
         print(summary)
     else:
         print("\n⚠ No segments generated")

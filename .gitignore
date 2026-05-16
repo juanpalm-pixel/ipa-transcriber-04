@@ -103,3 +103,4 @@ diarisation/diarisation_results.csv
 input/**/*
 !input/.gitkeep
 zz_past-results/**/*
+CPU_CONFIGURATION.md
